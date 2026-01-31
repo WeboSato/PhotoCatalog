@@ -1,5 +1,6 @@
 import React, { useEffect, useCallback, lazy, Suspense, useRef, useState } from 'react';
 import { useCatalogStore } from './stores/catalogStore';
+import { useLanguageStore } from './i18n';
 import { Sidebar } from './components/Sidebar';
 import { HistorySidebar } from './components/HistorySidebar';
 import { Toolbar } from './components/Toolbar';
@@ -202,6 +203,9 @@ const App: React.FC = () => {
             }),
             window.api.onViewMode((mode) => {
                 getStoreActions().setViewMode(mode as any);
+            }),
+            window.api.onLanguageChange((language) => {
+                useLanguageStore.getState().setLanguage(language as 'en' | 'fr');
             })
         ];
 

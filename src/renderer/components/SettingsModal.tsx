@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, FolderOpen, HardDrive, Database, Image, AlertTriangle, Check, Loader2, RefreshCw, Plus, Folder, Terminal, Trash2, Copy, Download, Upload, Globe } from 'lucide-react';
-import { useTranslation, Language } from '../i18n';
+import { useTranslation } from '../i18n';
+import type { Language } from '../i18n';
 
 // Global log storage
 const appLogs: { timestamp: Date; level: string; message: string; source: string }[] = [];

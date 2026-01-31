@@ -1,7 +1,8 @@
 // PhotoCatalog i18n Hook
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { translations, Language, TranslationKey } from './translations';
+import { translations } from './translations';
+import type { Language, TranslationKey } from './translations';
 
 interface LanguageStore {
   language: Language;

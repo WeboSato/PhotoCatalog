@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useCatalogStore } from '../stores/catalogStore';
+import { useTranslation } from '../i18n';
 import { FolderTree } from './FolderTree';
 import {
     Folder,
@@ -107,6 +108,7 @@ const SidebarItem: React.FC<SidebarItemProps> = ({
 const getStore = () => useCatalogStore.getState();
 
 export const Sidebar: React.FC = React.memo(() => {
+    const { t } = useTranslation();
     // Only subscribe to what affects render
     const collections = useCatalogStore((s) => s.collections);
     const keywords = useCatalogStore((s) => s.keywords);
@@ -338,7 +340,7 @@ export const Sidebar: React.FC = React.memo(() => {
                 >
                     <SidebarItem
                         icon={<Image size={14} />}
-                        label="All Photos"
+                        label={t('allPhotos')}
                         count={totalPhotoCount}
                         isActive={!activeCollectionId && !activeFolderId && Object.keys(filters).length === 0}
                         onClick={handleShowAllPhotos}
@@ -347,28 +349,28 @@ export const Sidebar: React.FC = React.memo(() => {
 
                 {/* Quick Filters */}
                 <SidebarSection
-                    title="Quick Filters"
+                    title={t('quickFilters')}
                     icon={<Filter size={16} />}
                 >
                     <SidebarItem
                         icon={<Star size={14} className="text-yellow-400" />}
-                        label="5 Stars"
+                        label={t('fiveStars')}
                         isActive={filters.rating?.min === 5}
                         onClick={() => getStore().setFilters({ rating: { min: 5 } })}
                     />
                     <SidebarItem
                         icon={<Star size={14} className="text-yellow-400" />}
-                        label="4+ Stars"
+                        label={t('fourPlusStars')}
                         isActive={filters.rating?.min === 4}
                         onClick={() => getStore().setFilters({ rating: { min: 4 } })}
                     />
                     <SidebarItem
-                        label="Priority"
+                        label={t('priority')}
                         isActive={filters.flag?.includes('picked')}
                         onClick={() => getStore().setFilters({ flag: ['picked'] })}
                     />
                     <SidebarItem
-                        label="Rejected"
+                        label={t('rejected')}
                         isActive={filters.flag?.includes('rejected')}
                         onClick={() => getStore().setFilters({ flag: ['rejected'] })}
                     />
@@ -378,7 +380,7 @@ export const Sidebar: React.FC = React.memo(() => {
                 {affinityData && affinityData.total > 0 && (
                     <SidebarItem
                         icon={<span className="text-xs font-bold text-red-500">AFI</span>}
-                        label="Affinity Edits"
+                        label={t('affinityEdits')}
                         count={affinityData.total}
                         isActive={filters.has_affinity_edit === true}
                         onClick={() => {
@@ -391,37 +393,37 @@ export const Sidebar: React.FC = React.memo(() => {
 
                 {/* Color Labels Filter */}
                 <SidebarSection
-                    title="Color Labels"
+                    title={t('colorLabels')}
                     icon={<div className="w-4 h-4 rounded-full bg-gradient-to-r from-red-500 via-yellow-500 to-blue-500" />}
                     defaultOpen={false}
                 >
                     <SidebarItem
                         icon={<div className="w-3 h-3 rounded-full bg-red-500" />}
-                        label="Red"
+                        label={t('red')}
                         isActive={filters.color_label?.includes('red')}
                         onClick={() => getStore().setFilters({ color_label: ['red'] })}
                     />
                     <SidebarItem
                         icon={<div className="w-3 h-3 rounded-full bg-yellow-500" />}
-                        label="Yellow"
+                        label={t('yellow')}
                         isActive={filters.color_label?.includes('yellow')}
                         onClick={() => getStore().setFilters({ color_label: ['yellow'] })}
                     />
                     <SidebarItem
                         icon={<div className="w-3 h-3 rounded-full bg-green-500" />}
-                        label="Green"
+                        label={t('green')}
                         isActive={filters.color_label?.includes('green')}
                         onClick={() => getStore().setFilters({ color_label: ['green'] })}
                     />
                     <SidebarItem
                         icon={<div className="w-3 h-3 rounded-full bg-blue-500" />}
-                        label="Blue"
+                        label={t('blue')}
                         isActive={filters.color_label?.includes('blue')}
                         onClick={() => getStore().setFilters({ color_label: ['blue'] })}
                     />
                     <SidebarItem
                         icon={<div className="w-3 h-3 rounded-full bg-purple-500" />}
-                        label="Purple"
+                        label={t('purple')}
                         isActive={filters.color_label?.includes('purple')}
                         onClick={() => getStore().setFilters({ color_label: ['purple'] })}
                     />
@@ -429,13 +431,13 @@ export const Sidebar: React.FC = React.memo(() => {
 
                 {/* Folders Section */}
                 <SidebarSection
-                    title="Folders"
+                    title={t('folders')}
                     icon={<HardDrive size={16} />}
                     action={
                         <button
                             onClick={handleImportFolder}
                             className="p-1 text-gray-500 hover:text-white rounded"
-                            title="Import Folder"
+                            title={t('importFolder')}
                         >
                             <Plus size={14} />
                         </button>
@@ -446,7 +448,7 @@ export const Sidebar: React.FC = React.memo(() => {
 
                 {/* Collections */}
                 <SidebarSection
-                    title="Collections"
+                    title={t('collections')}
                     icon={<LayoutGrid size={16} />}
                     action={
                         <button
@@ -458,7 +460,7 @@ export const Sidebar: React.FC = React.memo(() => {
                     }
                 >
                     {collections.length === 0 ? (
-                        <p className="px-3 py-2 text-xs text-gray-500">No collections yet</p>
+                        <p className="px-3 py-2 text-xs text-gray-500">{t('noCollectionsYet')}</p>
                     ) : (
                         collections.map((collection) => (
                             <SidebarItem
@@ -475,12 +477,12 @@ export const Sidebar: React.FC = React.memo(() => {
 
                 {/* Keywords */}
                 <SidebarSection
-                    title="Keywords"
+                    title={t('keywordsSection')}
                     icon={<Tag size={16} />}
                     defaultOpen={false}
                 >
                     {keywords.length === 0 ? (
-                        <p className="px-3 py-2 text-xs text-gray-500">No keywords yet</p>
+                        <p className="px-3 py-2 text-xs text-gray-500">{t('noKeywordsYet')}</p>
                     ) : (
                         keywords.slice(0, 20).map((keyword) => (
                             <SidebarItem
@@ -494,7 +496,7 @@ export const Sidebar: React.FC = React.memo(() => {
 
                 {/* People */}
                 <SidebarSection
-                    title="People"
+                    title={t('people')}
                     icon={<Users size={16} />}
                     defaultOpen={false}
                     action={
@@ -503,7 +505,7 @@ export const Sidebar: React.FC = React.memo(() => {
                                 onClick={scanFaces}
                                 disabled={isScanning}
                                 className="p-1 text-gray-500 hover:text-blue-400 rounded disabled:opacity-50"
-                                title="Scan faces"
+                                title={t('scanFaces')}
                             >
                                 {isScanning ? (
                                     <Loader2 size={14} className="animate-spin" />
@@ -513,7 +515,7 @@ export const Sidebar: React.FC = React.memo(() => {
                             </button>
                             <button
                                 onClick={async () => {
-                                    const name = prompt('Person name:');
+                                    const name = prompt(t('personName') + ':');
                                     if (name) {
                                         await window.api.createPerson(name);
                                         const updatedPeople = await window.api.getPeople();
@@ -521,14 +523,14 @@ export const Sidebar: React.FC = React.memo(() => {
                                     }
                                 }}
                                 className="p-1 text-gray-500 hover:text-white rounded"
-                                title="Add person"
+                                title={t('addPerson')}
                             >
                                 <Plus size={14} />
                             </button>
                             {people.length > 0 && (
                                 <button
                                     onClick={async () => {
-                                        if (confirm('Clear all face data? You can re-scan afterward.')) {
+                                        if (confirm(t('clearAllFacesConfirm'))) {
                                             await window.api.clearAllFaces();
                                             setPeople([]);
                                             setActivePersonId(null);
@@ -536,7 +538,7 @@ export const Sidebar: React.FC = React.memo(() => {
                                     }}
                                     disabled={isScanning}
                                     className="p-1 text-gray-500 hover:text-red-400 rounded disabled:opacity-50"
-                                    title="Clear all faces"
+                                    title={t('clearAllFaces')}
                                 >
                                     <Trash2 size={14} />
                                 </button>
@@ -549,16 +551,16 @@ export const Sidebar: React.FC = React.memo(() => {
                             {scanProgress.phase === 'clustering' ? (
                                 <span className="flex items-center gap-2">
                                     <Loader2 size={12} className="animate-spin" />
-                                    Grouping similar faces...
+                                    {t('groupingSimilarFaces')}
                                 </span>
                             ) : (
-                                <span>Scanning... {scanProgress.current}/{scanProgress.total}</span>
+                                <span>{t('scanning')} {scanProgress.current}/{scanProgress.total}</span>
                             )}
                         </div>
                     )}
                     {!isScanning && people.length === 0 ? (
                         <p className="px-3 py-2 text-xs text-gray-500">
-                            No people yet. Click <ScanFace size={12} className="inline" /> to scan.
+                            {t('noPeopleYet')} <ScanFace size={12} className="inline" />
                         </p>
                     ) : (
                         people.map((person) => (
@@ -599,17 +601,17 @@ export const Sidebar: React.FC = React.memo(() => {
                 {/* Duplicates */}
                 {duplicates.length > 0 && (
                     <SidebarSection
-                        title="Duplicates"
+                        title={t('duplicates')}
                         icon={<Copy size={16} />}
                         defaultOpen={false}
                     >
                         <p className="px-3 py-2 text-xs text-gray-400">
-                            Found {duplicates.length} groups of duplicate photos
+                            {t('foundDuplicateGroups').replace('{count}', String(duplicates.length))}
                         </p>
                         {duplicates.slice(0, 10).map((dup, i) => (
                             <SidebarItem
                                 key={i}
-                                label={`${dup.photos.length} copies`}
+                                label={`${dup.photos.length} ${t('copies')}`}
                                 onClick={() => {
                                     getStore().setPhotos(dup.photos);
                                 }}
@@ -628,7 +630,7 @@ export const Sidebar: React.FC = React.memo(() => {
                         hover:border-blue-400/50 hover:shadow-lg hover:shadow-blue-500/10"
                 >
                     <Plus size={16} />
-                    Import
+                    {t('import')}
                 </button>
 
                 <button

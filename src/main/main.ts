@@ -287,6 +287,22 @@ Images: ${path.join(catalogPath, 'Images')}`;
                     }
                 }
             ]
+        },
+        {
+            label: 'Language',
+            submenu: [
+                {
+                    label: 'English',
+                    type: 'radio',
+                    checked: true,
+                    click: () => mainWindow?.webContents.send('language:change', 'en')
+                },
+                {
+                    label: 'Français',
+                    type: 'radio',
+                    click: () => mainWindow?.webContents.send('language:change', 'fr')
+                }
+            ]
         }
     ];
 

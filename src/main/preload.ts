@@ -221,6 +221,11 @@ contextBridge.exposeInMainWorld('api', {
     onCatalogChanged: (callback: () => void) => {
         ipcRenderer.on('catalog:changed', callback);
         return () => ipcRenderer.removeListener('catalog:changed', callback);
+    },
+    onLanguageChange: (callback: (language: string) => void) => {
+        const handler = (_event: any, language: string) => callback(language);
+        ipcRenderer.on('language:change', handler);
+        return () => ipcRenderer.removeListener('language:change', handler);
     }
 });
 
@@ -380,6 +385,7 @@ export interface ElectronAPI {
     } | null>;
     catalogSelectAndOpen: () => Promise<{ success: boolean; error?: string }>;
     onCatalogChanged: (callback: () => void) => () => void;
+    onLanguageChange: (callback: (language: string) => void) => () => void;
 }
 
 declare global {
