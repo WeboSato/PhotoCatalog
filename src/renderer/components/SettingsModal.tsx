@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, FolderOpen, HardDrive, Database, Image, AlertTriangle, Check, Loader2, RefreshCw, Plus, Folder, Terminal, Trash2, Copy, Download, Upload } from 'lucide-react';
+import { X, FolderOpen, HardDrive, Database, Image, AlertTriangle, Check, Loader2, RefreshCw, Plus, Folder, Terminal, Trash2, Copy, Download, Upload, Globe } from 'lucide-react';
+import { useTranslation, Language } from '../i18n';
 
 // Global log storage
 const appLogs: { timestamp: Date; level: string; message: string; source: string }[] = [];
@@ -673,6 +674,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                         )}
                     </div>
 
+                    {/* Language Settings */}
+                    <LanguageSection />
+
                     {/* Application Logs */}
                     <div className="space-y-3">
                         <div className="flex items-center justify-between">
@@ -793,6 +797,47 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                         className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded text-sm"
                     >
                         Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// Language Settings Component
+const LanguageSection: React.FC = () => {
+    const { language, setLanguage } = useTranslation();
+
+    return (
+        <div className="space-y-3">
+            <h3 className="text-sm font-medium text-gray-300 flex items-center gap-2">
+                <Globe size={16} />
+                Language / Langue
+            </h3>
+            <div className="bg-gray-800 rounded-lg p-4">
+                <p className="text-xs text-gray-500 mb-3">
+                    Choose your preferred language / Choisissez votre langue préférée
+                </p>
+                <div className="flex gap-2">
+                    <button
+                        onClick={() => setLanguage('en')}
+                        className={`px-4 py-2 rounded text-sm font-medium transition-colors ${
+                            language === 'en'
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                        }`}
+                    >
+                        English
+                    </button>
+                    <button
+                        onClick={() => setLanguage('fr')}
+                        className={`px-4 py-2 rounded text-sm font-medium transition-colors ${
+                            language === 'fr'
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                        }`}
+                    >
+                        Français
                     </button>
                 </div>
             </div>
