@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <!-- Vignette gradient -->
+    <radialGradient id="vignette" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#2a2a2a"/>
+      <stop offset="60%" stop-color="#1a1a1a"/>
+      <stop offset="100%" stop-color="#0a0a0a"/>
+    </radialGradient>
+
+    <!-- Glossy highlight -->
+    <linearGradient id="gloss" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.15)"/>
+      <stop offset="50%" stop-color="rgba(255,255,255,0)"/>
+    </linearGradient>
+
+    <!-- Portrait gradient -->
+    <linearGradient id="portraitGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#e8e8e8"/>
+      <stop offset="100%" stop-color="#b0b0b0"/>
+    </linearGradient>
+
+    <!-- Frame border gradient -->
+    <linearGradient id="frameBorder" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4a4a4a"/>
+      <stop offset="50%" stop-color="#2a2a2a"/>
+      <stop offset="100%" stop-color="#3a3a3a"/>
+    </linearGradient>
+
+    <!-- Inner shadow -->
+    <filter id="innerShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="15" result="blur"/>
+      <feOffset dx="0" dy="5" result="offsetBlur"/>
+      <feComposite in="SourceGraphic" in2="offsetBlur" operator="over"/>
+    </filter>
+
+    <!-- Drop shadow for portrait -->
+    <filter id="portraitShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+
+  <!-- Main rounded square background -->
+  <rect x="40" y="40" width="944" height="944" rx="180" ry="180" fill="url(#frameBorder)"/>
+
+  <!-- Inner dark area with vignette -->
+  <rect x="56" y="56" width="912" height="912" rx="168" ry="168" fill="url(#vignette)"/>
+
+  <!-- Subtle inner frame line -->
+  <rect x="80" y="80" width="864" height="864" rx="150" ry="150" fill="none" stroke="#3a3a3a" stroke-width="2"/>
+
+  <!-- Portrait silhouette group -->
+  <g filter="url(#portraitShadow)">
+    <!-- Head -->
+    <ellipse cx="512" cy="340" rx="145" ry="175" fill="url(#portraitGrad)"/>
+
+    <!-- Neck -->
+    <path d="M 440 480 Q 440 540 420 600 L 604 600 Q 584 540 584 480 Z" fill="url(#portraitGrad)"/>
+
+    <!-- Shoulders -->
+    <path d="M 220 820 Q 220 680 360 620 L 420 600 Q 450 700 512 700 Q 574 700 604 600 L 664 620 Q 804 680 804 820 L 804 900 L 220 900 Z" fill="url(#portraitGrad)"/>
+  </g>
+
+  <!-- Aperture blades accent (bottom right) -->
+  <g transform="translate(780, 780)" opacity="0.6">
+    <circle cx="0" cy="0" r="85" fill="none" stroke="#505050" stroke-width="3"/>
+    <path d="M 0 -60 L 20 -30 L -20 -30 Z" fill="#606060" transform="rotate(0)"/>
+    <path d="M 0 -60 L 20 -30 L -20 -30 Z" fill="#606060" transform="rotate(60)"/>
+    <path d="M 0 -60 L 20 -30 L -20 -30 Z" fill="#606060" transform="rotate(120)"/>
+    <path d="M 0 -60 L 20 -30 L -20 -30 Z" fill="#606060" transform="rotate(180)"/>
+    <path d="M 0 -60 L 20 -30 L -20 -30 Z" fill="#606060" transform="rotate(240)"/>
+    <path d="M 0 -60 L 20 -30 L -20 -30 Z" fill="#606060" transform="rotate(300)"/>
+    <circle cx="0" cy="0" r="35" fill="#1a1a1a" stroke="#404040" stroke-width="2"/>
+  </g>
+
+  <!-- Glossy overlay -->
+  <rect x="56" y="56" width="912" height="456" rx="168" ry="168" fill="url(#gloss)"/>
+</svg>

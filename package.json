@@ -1,0 +1,136 @@
+{
+    "name": "photocatalog",
+    "version": "1.0.0",
+    "description": "Professional photo catalog and management application inspired by Adobe Lightroom",
+    "main": "dist/main/main/main.js",
+    "scripts": {
+        "dev": "concurrently \"npm run dev:vite\" \"npm run dev:electron\"",
+        "dev:vite": "vite",
+        "dev:electron": "wait-on http://localhost:5173 && npm run build:main && electron .",
+        "build": "npm run build:main && npm run build:renderer",
+        "build:main": "tsc -p tsconfig.main.json",
+        "build:renderer": "vite build",
+        "start": "electron .",
+        "test": "vitest",
+        "lint": "eslint src --ext .ts,.tsx",
+        "package": "npm run build && electron-builder",
+        "package:mac": "npm run build && electron-builder --mac",
+        "package:win": "npm run build && electron-builder --win",
+        "package:linux": "npm run build && electron-builder --linux",
+        "rebuild": "electron-rebuild -f -w better-sqlite3,sharp"
+    },
+    "keywords": [
+        "photo",
+        "catalog",
+        "lightroom",
+        "raw",
+        "photography",
+        "image-management"
+    ],
+    "author": {
+        "name": "WeboSato",
+        "url": "https://github.com/WeboSato"
+    },
+    "license": "MIT",
+    "type": "commonjs",
+    "devDependencies": {
+        "@types/better-sqlite3": "^7.6.12",
+        "@types/node": "^22.0.0",
+        "@types/react-window": "^1.8.8",
+        "@types/uuid": "^10.0.0",
+        "@vitejs/plugin-react": "^4.3.4",
+        "autoprefixer": "^10.4.20",
+        "concurrently": "^9.1.2",
+        "electron": "^33.0.0",
+        "electron-builder": "^25.1.8",
+        "electron-rebuild": "^3.2.9",
+        "node-addon-api": "^8.5.0",
+        "node-gyp": "^12.1.0",
+        "postcss": "^8.5.6",
+        "tailwindcss": "^3.4.17",
+        "typescript": "^5.7.3",
+        "vite": "^6.0.7",
+        "vitest": "^2.1.8",
+        "wait-on": "^8.0.1"
+    },
+    "dependencies": {
+        "@tanstack/react-virtual": "^3.13.13",
+        "@types/leaflet": "^1.9.21",
+        "@types/react": "^18.3.18",
+        "@types/react-dom": "^18.3.5",
+        "better-sqlite3": "^11.7.0",
+        "date-fns": "^4.1.0",
+        "electron-store": "^8.1.0",
+        "exifreader": "^4.33.1",
+        "face-api.js": "^0.22.2",
+        "leaflet": "^1.9.4",
+        "lru-cache": "^11.2.4",
+        "lucide-react": "^0.468.0",
+        "react": "^18.3.1",
+        "react-dom": "^18.3.1",
+        "react-leaflet": "^5.0.0",
+        "react-virtualized-auto-sizer": "^1.0.26",
+        "react-window": "^2.2.3",
+        "react-window-infinite-loader": "^2.0.0",
+        "sharp": "^0.33.5",
+        "uuid": "^11.0.4",
+        "zustand": "^5.0.3"
+    },
+    "build": {
+        "appId": "com.photocatalog.app",
+        "productName": "PhotoCatalog",
+        "directories": {
+            "output": "release"
+        },
+        "files": [
+            "dist/**/*",
+            "node_modules/**/*",
+            "package.json"
+        ],
+        "asarUnpack": [
+            "dist/renderer/models/**/*"
+        ],
+        "extraResources": [
+            {
+                "from": "public/models",
+                "to": "models"
+            },
+            {
+                "from": "resources/",
+                "to": "resources/",
+                "filter": [
+                    "**/*"
+                ]
+            }
+        ],
+        "mac": {
+            "category": "public.app-category.photography",
+            "icon": "resources/icon.icns",
+            "target": [
+                "dmg",
+                "zip"
+            ],
+            "hardenedRuntime": true,
+            "gatekeeperAssess": false
+        },
+        "win": {
+            "icon": "resources/icon.ico",
+            "target": [
+                "nsis",
+                "portable"
+            ]
+        },
+        "linux": {
+            "icon": "resources/icons",
+            "target": [
+                "AppImage",
+                "deb"
+            ],
+            "category": "Graphics"
+        },
+        "nsis": {
+            "oneClick": false,
+            "allowToChangeInstallationDirectory": true
+        }
+    }
+}
