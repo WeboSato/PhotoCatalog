@@ -45,7 +45,7 @@ class CatalogManagerService {
             // Validate catalog name
             const safeName = this.sanitizeCatalogName(name);
             if (!safeName) {
-                return { success: false, error: 'Nom de catalogue invalide' };
+                return { success: false, error: 'Invalid catalog name' };
             }
 
             // Create catalog directory structure
@@ -56,7 +56,7 @@ class CatalogManagerService {
 
             // Check if catalog already exists
             if (fs.existsSync(catalogFolder)) {
-                return { success: false, error: `Un catalogue "${safeName}" existe déjà à cet emplacement` };
+                return { success: false, error: `A catalog "${safeName}" already exists at this location` };
             }
 
             // Create main catalog folder
@@ -225,9 +225,9 @@ class CatalogManagerService {
      */
     async selectCatalogLocation(): Promise<string | null> {
         const result = await dialog.showOpenDialog({
-            title: 'Choisir l\'emplacement du catalogue',
+            title: 'Choose catalog location',
             properties: ['openDirectory', 'createDirectory'],
-            buttonLabel: 'Sélectionner'
+            buttonLabel: 'Select'
         });
 
         if (result.canceled || result.filePaths.length === 0) {
@@ -247,7 +247,7 @@ class CatalogManagerService {
             const pcdbFile = files.find(f => f.endsWith('.pcdb'));
 
             if (!pcdbFile) {
-                return { success: false, error: 'Aucun fichier catalogue (.pcdb) trouvé' };
+                return { success: false, error: 'No catalog file (.pcdb) found' };
             }
 
             const dbPath = path.join(catalogPath, pcdbFile);
@@ -256,7 +256,7 @@ class CatalogManagerService {
 
             // Verify database exists
             if (!fs.existsSync(dbPath)) {
-                return { success: false, error: 'Base de données du catalogue introuvable' };
+                return { success: false, error: 'Catalog database not found' };
             }
 
             // Update settings to use this catalog

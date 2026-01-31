@@ -222,7 +222,7 @@ function createMenu(): void {
                     click: () => mainWindow?.webContents.send('view:mode', 'loupe')
                 },
                 {
-                    label: 'Évaluation',
+                    label: 'Rating',
                     accelerator: 'N',
                     click: () => mainWindow?.webContents.send('view:mode', 'survey')
                 },
@@ -251,9 +251,9 @@ function createMenu(): void {
             label: 'Info',
             submenu: [
                 {
-                    label: 'Catalogue / Catalog',
+                    label: 'Catalog',
                     click: () => {
-                        const catalogPath = settingsService.get('catalogPath') || 'Non défini';
+                        const catalogPath = settingsService.get('catalogPath') || 'Not defined';
                         shell.showItemInFolder(catalogPath);
                     }
                 },
@@ -271,17 +271,17 @@ function createMenu(): void {
                 },
                 { type: 'separator' },
                 {
-                    label: 'Copier chemins / Copy Paths',
+                    label: 'Copy Paths',
                     click: () => {
                         const { clipboard } = require('electron');
-                        const catalogPath = settingsService.get('catalogPath') || 'Non défini';
-                        const paths = `Catalogue / Catalog: ${catalogPath}
+                        const catalogPath = settingsService.get('catalogPath') || 'Not defined';
+                        const paths = `Catalog: ${catalogPath}
 Images: ${path.join(catalogPath, 'Images')}`;
                         clipboard.writeText(paths);
                         dialog.showMessageBox(mainWindow!, {
                             type: 'info',
-                            title: 'Chemins copiés / Paths Copied',
-                            message: 'Les chemins ont été copiés dans le presse-papiers.\nPaths have been copied to clipboard.',
+                            title: 'Paths Copied',
+                            message: 'Paths have been copied to clipboard.',
                             detail: paths
                         });
                     }
@@ -924,7 +924,7 @@ ipcMain.handle('folders:move', async (_, sourcePath: string, targetParentPath: s
 
     // Check if target already exists
     if (fs.existsSync(newPath)) {
-        throw new Error(`Un dossier "${folderName}" existe déjà à cette destination`);
+        throw new Error(`A folder "${folderName}" already exists at this destination`);
     }
 
     // Move the folder on disk
@@ -932,7 +932,7 @@ ipcMain.handle('folders:move', async (_, sourcePath: string, targetParentPath: s
         fs.renameSync(sourcePath, newPath);
     } catch (e) {
         console.error('[Main] Failed to move folder:', e);
-        throw new Error('Impossible de déplacer le dossier');
+        throw new Error('Unable to move folder');
     }
 
     // Find the target parent folder in database
@@ -1320,12 +1320,12 @@ ipcMain.handle('editor:linkEditedFile', async (_, photoId: string) => {
 
     // Open a file dialog to select the edited file
     const result = await dialog.showOpenDialog({
-        title: 'Sélectionner le fichier modifié (.af, .afphoto)',
+        title: 'Select modified file (.af, .afphoto)',
         defaultPath: defaultPath,
         filters: [
-            { name: 'Fichiers Affinity', extensions: ['afphoto', 'af'] },
+            { name: 'Affinity Files', extensions: ['afphoto', 'af'] },
             { name: 'Images', extensions: ['tiff', 'tif', 'psd', 'jpg', 'jpeg', 'png'] },
-            { name: 'Tous les fichiers', extensions: ['*'] }
+            { name: 'All Files', extensions: ['*'] }
         ],
         properties: ['openFile']
     });
@@ -1810,7 +1810,7 @@ ipcMain.handle("settings:getCatalogInfo", () => {
 ipcMain.handle("settings:selectCatalogPath", async () => {
     const result = await dialog.showOpenDialog(mainWindow!, {
         properties: ["openDirectory", "createDirectory"],
-        title: "Choisir l'emplacement du catalogue"
+        title: "Choose catalog location"
     });
     return result.filePaths[0] || null;
 });
@@ -1853,11 +1853,11 @@ ipcMain.handle("catalog:getStats", async (_, catalogPath: string) => {
 ipcMain.handle("catalog:selectAndOpen", async () => {
     const result = await dialog.showOpenDialog(mainWindow!, {
         properties: ["openDirectory"],
-        title: "Ouvrir un catalogue"
+        title: "Open a catalog"
     });
 
     if (result.canceled || result.filePaths.length === 0) {
-        return { success: false, error: 'Annulé' };
+        return { success: false, error: 'Cancelled' };
     }
 
     return catalogManagerService.openCatalog(result.filePaths[0]);

@@ -95,10 +95,10 @@ export const ImportDialog: React.FC<ImportDialogProps> = ({
                         <Camera size={24} className="text-blue-400" />
                         <div>
                             <h2 className="text-lg font-semibold text-white">
-                                Importer depuis {sourceName}
+                                Import from {sourceName}
                             </h2>
                             <p className="text-sm text-blue-300">
-                                {photoCount} photos détectées
+                                {photoCount} photos detected
                             </p>
                         </div>
                     </div>
@@ -132,7 +132,7 @@ export const ImportDialog: React.FC<ImportDialogProps> = ({
                                 className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded text-sm"
                                 disabled={isImporting}
                             >
-                                Parcourir...
+                                Browse...
                             </button>
                         </div>
                     </div>
@@ -140,7 +140,7 @@ export const ImportDialog: React.FC<ImportDialogProps> = ({
                     {/* Subfolder name */}
                     <div>
                         <label className="block text-sm font-medium text-gray-300 mb-2">
-                            Nom du sous-dossier
+                            Subfolder Name
                         </label>
                         <input
                             type="text"
@@ -151,7 +151,7 @@ export const ImportDialog: React.FC<ImportDialogProps> = ({
                             disabled={isImporting}
                         />
                         <p className="mt-1 text-xs text-gray-500">
-                            Chemin final: {finalPath}
+                            Final path: {finalPath}
                         </p>
                     </div>
 
@@ -159,13 +159,13 @@ export const ImportDialog: React.FC<ImportDialogProps> = ({
                     <div>
                         <label className="flex items-center gap-2 text-sm font-medium text-gray-300 mb-2">
                             <Tag size={16} />
-                            Mots-clés (séparés par des virgules)
+                            Keywords (comma separated)
                         </label>
                         <input
                             type="text"
                             value={keywordsInput}
                             onChange={(e) => setKeywordsInput(e.target.value)}
-                            placeholder="Ex: mariage, portrait, extérieur"
+                            placeholder="Ex: wedding, portrait, outdoor"
                             className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded text-sm text-white"
                             disabled={isImporting}
                         />
@@ -175,7 +175,7 @@ export const ImportDialog: React.FC<ImportDialogProps> = ({
                     <div>
                         <label className="flex items-center gap-2 text-sm font-medium text-gray-300 mb-2">
                             <FileText size={16} />
-                            Renommer les fichiers
+                            Rename files
                         </label>
                         <div className="space-y-2">
                             <label className="flex items-center gap-2 cursor-pointer">
@@ -187,7 +187,7 @@ export const ImportDialog: React.FC<ImportDialogProps> = ({
                                     className="text-blue-500"
                                     disabled={isImporting}
                                 />
-                                <span className="text-sm text-gray-300">Garder le nom original</span>
+                                <span className="text-sm text-gray-300">Keep original name</span>
                             </label>
                             <label className="flex items-center gap-2 cursor-pointer">
                                 <input
@@ -198,7 +198,7 @@ export const ImportDialog: React.FC<ImportDialogProps> = ({
                                     className="text-blue-500"
                                     disabled={isImporting}
                                 />
-                                <span className="text-sm text-gray-300">Date + séquence (2024-01-15_001.jpg)</span>
+                                <span className="text-sm text-gray-300">Date + sequence (2024-01-15_001.jpg)</span>
                             </label>
                             <label className="flex items-center gap-2 cursor-pointer">
                                 <input
@@ -209,7 +209,7 @@ export const ImportDialog: React.FC<ImportDialogProps> = ({
                                     className="text-blue-500"
                                     disabled={isImporting}
                                 />
-                                <span className="text-sm text-gray-300">Personnalisé</span>
+                                <span className="text-sm text-gray-300">Custom</span>
                             </label>
                             {renamePattern === 'custom' && (
                                 <input
@@ -235,12 +235,12 @@ export const ImportDialog: React.FC<ImportDialogProps> = ({
                                 disabled={isImporting}
                             />
                             <span className="text-sm text-gray-300">
-                                Supprimer les photos de la carte après l'import
+                                Delete photos from card after import
                             </span>
                         </label>
                         {deleteAfterImport && (
                             <p className="mt-1 ml-6 text-xs text-yellow-500">
-                                Attention: Cette action est irréversible!
+                                Warning: This action is irreversible!
                             </p>
                         )}
                     </div>
@@ -253,7 +253,7 @@ export const ImportDialog: React.FC<ImportDialogProps> = ({
                         className="px-4 py-2 text-sm text-gray-300 hover:text-white hover:bg-gray-700 rounded"
                         disabled={isImporting}
                     >
-                        Annuler
+                        Cancel
                     </button>
                     <button
                         onClick={handleImport}
@@ -263,12 +263,12 @@ export const ImportDialog: React.FC<ImportDialogProps> = ({
                         {isImporting ? (
                             <>
                                 <Loader2 size={16} className="animate-spin" />
-                                Importation...
+                                Importing...
                             </>
                         ) : (
                             <>
                                 <Check size={16} />
-                                Importer {photoCount} photos
+                                Import {photoCount} photos
                             </>
                         )}
                     </button>

@@ -317,7 +317,7 @@ const PhotoCell = React.memo<{
                                     transition: 'color 0.15s',
                                     filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.5))',
                                 }}
-                                title={`${rating} étoiles`}
+                                title={`${rating} stars`}
                             >
                                 <Star size={18} fill={rating <= photo.rating ? '#fbbf24' : 'none'} strokeWidth={2} />
                             </button>
@@ -361,7 +361,7 @@ const PhotoCell = React.memo<{
                                 display: 'flex',
                                 alignItems: 'center',
                             }}
-                            title="Rejeter (X)"
+                            title="Reject (X)"
                         >
                             <X size={14} />
                         </button>
@@ -427,7 +427,7 @@ const ContextMenu: React.FC<{
             </div>
             {editors.length > 0 ? (
                 <>
-                    <div className="px-3 py-1 text-xs text-gray-500 mt-1">Modifier dans...</div>
+                    <div className="px-3 py-1 text-xs text-gray-500 mt-1">Edit in...</div>
                     {editors.map((editor) => (
                         <button
                             key={editor.id}
@@ -439,26 +439,26 @@ const ContextMenu: React.FC<{
                     ))}
                 </>
             ) : (
-                <div className="px-3 py-2 text-sm text-gray-500">Aucun éditeur disponible</div>
+                <div className="px-3 py-2 text-sm text-gray-500">No editor available</div>
             )}
             <div className="border-t border-[#444] mt-1 pt-1">
                 <button
                     className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-blue-600 hover:text-white"
                     onClick={onLinkEditedFile}
                 >
-                    📎 Lier fichier modifié...
+                    📎 Link edited file...
                 </button>
                 <button
                     className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-blue-600 hover:text-white"
                     onClick={onGoToFolder}
                 >
-                    📁 Aller au dossier
+                    📁 Go to folder
                 </button>
                 <button
                     className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-blue-600 hover:text-white"
                     onClick={onShowInFinder}
                 >
-                    📂 Afficher dans le Finder
+                    📂 Show in Finder
                 </button>
             </div>
         </div>
@@ -857,26 +857,26 @@ export const PhotoGrid: React.FC = React.memo(() => {
                     {selectedIds.size > 0 && (
                         <>
                             <span className="text-xs text-blue-400 mr-1">
-                                {selectedIds.size} sélectionné{selectedIds.size > 1 ? 's' : ''}
+                                {selectedIds.size} selected
                             </span>
                             <button
                                 onClick={() => setSelectedPhotoIds(new Set())}
                                 className="p-1 text-gray-400 hover:text-white hover:bg-gray-700 rounded mr-1"
-                                title="Désélectionner tout"
+                                title="Deselect all"
                             >
                                 <X size={14} />
                             </button>
                             <button
                                 onClick={() => handleRotate('ccw')}
                                 className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded"
-                                title="Rotation gauche"
+                                title="Rotate left"
                             >
                                 <RotateCcw size={16} />
                             </button>
                             <button
                                 onClick={() => handleRotate('cw')}
                                 className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded"
-                                title="Rotation droite"
+                                title="Rotate right"
                             >
                                 <RotateCw size={16} />
                             </button>
@@ -889,7 +889,7 @@ export const PhotoGrid: React.FC = React.memo(() => {
                                     setDeleteDialogOpen(true);
                                 }}
                                 className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-gray-700 rounded"
-                                title="Supprimer (Delete)"
+                                title="Delete"
                             >
                                 <Trash2 size={16} />
                             </button>
@@ -1005,15 +1005,15 @@ export const PhotoGrid: React.FC = React.memo(() => {
                     <div className="flex items-start gap-3">
                         <div className="text-2xl">📁</div>
                         <div className="flex-1">
-                            <p className="font-medium mb-1">Sauvegarde dans Affinity</p>
+                            <p className="font-medium mb-1">Save in Affinity</p>
                             <p className="text-sm text-blue-100 mb-2">
-                                Quand tu sauvegardes dans Affinity, utilise ce dossier:
+                                When saving in Affinity, use this folder:
                             </p>
                             <code className="block bg-blue-800 px-3 py-2 rounded text-xs break-all">
                                 {savePathNotification.path}
                             </code>
                             <p className="text-xs text-blue-200 mt-2">
-                                ✓ Chemin copié dans le presse-papier (Cmd+V pour coller)
+                                ✓ Path copied to clipboard (Cmd+V to paste)
                             </p>
                         </div>
                         <button

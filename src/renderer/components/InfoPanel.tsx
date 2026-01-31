@@ -514,31 +514,31 @@ export const InfoPanel: React.FC = React.memo(() => {
                 {isLoupeMode && (
                     <>
                         {/* Histogram */}
-                        <Section title="Histogramme" defaultOpen={true}>
+                        <Section title="Histogram" defaultOpen={true}>
                             <Histogram imageSrc={imageSrc} />
                         </Section>
 
                         {/* Basic Adjustments */}
-                        <Section title="Réglages de base" defaultOpen={true}>
-                            <Slider label="Exposition" value={devSettings.exposure} min={-100} max={100} onChange={(v) => handleDevSettingChange('exposure', v)} />
-                            <Slider label="Contraste" value={devSettings.contrast} min={-100} max={100} onChange={(v) => handleDevSettingChange('contrast', v)} />
-                            <Slider label="Hautes lumières" value={devSettings.highlights} min={-100} max={100} onChange={(v) => handleDevSettingChange('highlights', v)} />
-                            <Slider label="Ombres" value={devSettings.shadows} min={-100} max={100} onChange={(v) => handleDevSettingChange('shadows', v)} />
-                            <Slider label="Blancs" value={devSettings.whites} min={-100} max={100} onChange={(v) => handleDevSettingChange('whites', v)} />
-                            <Slider label="Noirs" value={devSettings.blacks} min={-100} max={100} onChange={(v) => handleDevSettingChange('blacks', v)} />
+                        <Section title="Basic Settings" defaultOpen={true}>
+                            <Slider label="Exposure" value={devSettings.exposure} min={-100} max={100} onChange={(v) => handleDevSettingChange('exposure', v)} />
+                            <Slider label="Contrast" value={devSettings.contrast} min={-100} max={100} onChange={(v) => handleDevSettingChange('contrast', v)} />
+                            <Slider label="Highlights" value={devSettings.highlights} min={-100} max={100} onChange={(v) => handleDevSettingChange('highlights', v)} />
+                            <Slider label="Shadows" value={devSettings.shadows} min={-100} max={100} onChange={(v) => handleDevSettingChange('shadows', v)} />
+                            <Slider label="Whites" value={devSettings.whites} min={-100} max={100} onChange={(v) => handleDevSettingChange('whites', v)} />
+                            <Slider label="Blacks" value={devSettings.blacks} min={-100} max={100} onChange={(v) => handleDevSettingChange('blacks', v)} />
                         </Section>
 
                         {/* Presence */}
-                        <Section title="Présence" defaultOpen={false}>
-                            <Slider label="Clarté" value={devSettings.clarity} min={-100} max={100} onChange={(v) => handleDevSettingChange('clarity', v)} />
+                        <Section title="Presence" defaultOpen={false}>
+                            <Slider label="Clarity" value={devSettings.clarity} min={-100} max={100} onChange={(v) => handleDevSettingChange('clarity', v)} />
                             <Slider label="Vibrance" value={devSettings.vibrance} min={-100} max={100} onChange={(v) => handleDevSettingChange('vibrance', v)} />
                             <Slider label="Saturation" value={devSettings.saturation} min={-100} max={100} onChange={(v) => handleDevSettingChange('saturation', v)} />
                         </Section>
 
                         {/* White Balance */}
-                        <Section title="Balance des blancs" defaultOpen={false}>
-                            <Slider label="Température" value={devSettings.temperature} min={-100} max={100} onChange={(v) => handleDevSettingChange('temperature', v)} />
-                            <Slider label="Teinte" value={devSettings.tint} min={-100} max={100} onChange={(v) => handleDevSettingChange('tint', v)} />
+                        <Section title="White Balance" defaultOpen={false}>
+                            <Slider label="Temperature" value={devSettings.temperature} min={-100} max={100} onChange={(v) => handleDevSettingChange('temperature', v)} />
+                            <Slider label="Tint" value={devSettings.tint} min={-100} max={100} onChange={(v) => handleDevSettingChange('tint', v)} />
                         </Section>
 
                         {/* Reset button */}
@@ -547,7 +547,7 @@ export const InfoPanel: React.FC = React.memo(() => {
                                 onClick={handleResetDev}
                                 className="w-full px-3 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
                             >
-                                Réinitialiser tout
+                                Reset All
                             </button>
                         </div>
                     </>

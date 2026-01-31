@@ -265,14 +265,14 @@ const FolderContextMenuComponent: React.FC<{
                 disabled={isSyncing}
             >
                 <RefreshCw size={14} className={isSyncing ? 'animate-spin' : ''} />
-                {isSyncing ? 'Synchronisation...' : 'Synchroniser ce dossier'}
+                {isSyncing ? 'Syncing...' : 'Sync this folder'}
             </button>
             <button
                 className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-blue-600 hover:text-white flex items-center gap-2"
                 onClick={onShowInFinder}
             >
                 <FolderInput size={14} />
-                Afficher dans le Finder
+                Show in Finder
             </button>
             <div className="border-t border-[#444] my-1" />
             <button
@@ -280,14 +280,14 @@ const FolderContextMenuComponent: React.FC<{
                 onClick={onHide}
             >
                 <EyeOff size={14} />
-                Masquer de la bibliothèque
+                Hide from library
             </button>
             <button
                 className="w-full px-3 py-2 text-left text-sm text-red-400 hover:bg-red-600 hover:text-white flex items-center gap-2"
                 onClick={onDelete}
             >
                 <Trash2 size={14} />
-                Supprimer définitivement
+                Delete permanently
             </button>
         </div>
     );
@@ -534,7 +534,7 @@ export const FolderTree: React.FC = () => {
     const handleDeleteFolder = useCallback(async () => {
         if (contextMenu.folder) {
             const confirmed = window.confirm(
-                `Voulez-vous vraiment supprimer le dossier "${contextMenu.folder.name}" et toutes ses photos?\n\nCette action est irréversible!`
+                `Are you sure you want to delete the folder "${contextMenu.folder.name}" and all its photos?\n\nThis action is irreversible!`
             );
             if (confirmed) {
                 try {

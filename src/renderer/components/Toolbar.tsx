@@ -119,7 +119,7 @@ export const Toolbar: React.FC = React.memo(() => {
                             key={mode}
                             onClick={() => handleViewMode(mode)}
                             className={`p-1.5 rounded ${viewMode === mode ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-white'}`}
-                            title={mode === 'survey' ? 'Évaluation (N)' : mode.charAt(0).toUpperCase() + mode.slice(1)}
+                            title={mode === 'survey' ? 'Rating (N)' : mode.charAt(0).toUpperCase() + mode.slice(1)}
                         >
                             {mode === 'grid' && <Grid3X3 size={18} />}
                             {mode === 'loupe' && <Maximize size={18} />}
@@ -210,7 +210,7 @@ const SelectionActions: React.FC<{ colorLabels: { value: string; color: string; 
             <button
                 onClick={handleDeselectAll}
                 className="ml-1 p-1 text-gray-400 hover:text-white hover:bg-gray-800 rounded"
-                title="Désélectionner tout"
+                title="Deselect all"
             >
                 <X size={14} />
             </button>

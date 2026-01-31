@@ -186,7 +186,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                 setShowNewCatalogForm(false);
 
                 // Ask user to restart
-                alert('Catalogue créé avec succès! Redémarrez l\'application pour l\'utiliser.');
+                alert('Catalog created successfully! Restart the application to use it.');
             }
         } catch (e) {
             setCatalogCreateResult({
@@ -202,10 +202,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
         try {
             const result = await window.api.catalogSelectAndOpen();
             if (result.success) {
-                alert('Catalogue ouvert avec succès! Redémarrez l\'application pour appliquer les changements.');
+                alert('Catalog opened successfully! Restart the application to apply changes.');
                 onClose();
-            } else if (result.error && result.error !== 'Annulé') {
-                alert('Erreur: ' + result.error);
+            } else if (result.error && result.error !== 'Cancelled') {
+                alert('Error: ' + result.error);
             }
         } catch (e) {
             console.error('Failed to open catalog:', e);
@@ -214,7 +214,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
 
     const handleRegenerateThumbnails = async () => {
         setIsRegenerating(true);
-        setLightroomProgress({ current: 0, total: 0, status: 'Démarrage...' });
+        setLightroomProgress({ current: 0, total: 0, status: 'Starting...' });
 
         try {
             const unsubscribe = window.api.onImportProgress((progress) => {
@@ -237,7 +237,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
 
     const handleSyncLightroom = async () => {
         setIsSyncingLightroom(true);
-        setLightroomProgress({ current: 0, total: 0, status: 'Synchronisation...' });
+        setLightroomProgress({ current: 0, total: 0, status: 'Syncing...' });
 
         try {
             const unsubscribe = window.api.onImportProgress((progress) => {
@@ -263,7 +263,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
 
     const handleImportLightroom = async () => {
         setIsImportingLightroom(true);
-        setLightroomProgress({ current: 0, total: 0, status: 'Import en cours...' });
+        setLightroomProgress({ current: 0, total: 0, status: 'Importing...' });
 
         try {
             const unsubscribe = window.api.onImportProgress((progress) => {
@@ -294,7 +294,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
             <div className="bg-gray-900 rounded-lg w-[600px] max-h-[80vh] overflow-hidden shadow-xl border border-gray-700">
                 {/* Header */}
                 <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
-                    <h2 className="text-lg font-semibold text-white">Paramètres</h2>
+                    <h2 className="text-lg font-semibold text-white">Settings</h2>
                     <button
                         onClick={onClose}
                         className="p-1 text-gray-400 hover:text-white hover:bg-gray-800 rounded"
@@ -309,34 +309,34 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                     <div className="space-y-3">
                         <h3 className="text-sm font-medium text-gray-300 flex items-center gap-2">
                             <Database size={16} />
-                            Emplacement du catalogue
+                            Catalog Location
                         </h3>
 
                         {loading ? (
                             <div className="flex items-center gap-2 text-gray-500">
                                 <Loader2 size={16} className="animate-spin" />
-                                Chargement...
+                                Loading...
                             </div>
                         ) : catalogInfo ? (
                             <div className="bg-gray-800 rounded-lg p-4 space-y-3">
                                 <div>
-                                    <p className="text-xs text-gray-500">Base de données</p>
+                                    <p className="text-xs text-gray-500">Database</p>
                                     <p className="text-sm text-gray-300 font-mono break-all">{catalogInfo.dbPath}</p>
                                     <p className="text-xs text-gray-500 mt-1">
-                                        Taille: {formatBytes(catalogInfo.dbSize)}
+                                        Size: {formatBytes(catalogInfo.dbSize)}
                                     </p>
                                 </div>
 
                                 <div className="border-t border-gray-700 pt-3">
-                                    <p className="text-xs text-gray-500">Cache des vignettes</p>
+                                    <p className="text-xs text-gray-500">Thumbnail Cache</p>
                                     <p className="text-sm text-gray-300 font-mono break-all">{catalogInfo.thumbPath}</p>
                                     <p className="text-xs text-gray-500 mt-1">
-                                        {catalogInfo.thumbCount.toLocaleString()} vignettes ({formatBytes(catalogInfo.thumbSize)})
+                                        {catalogInfo.thumbCount.toLocaleString()} thumbnails ({formatBytes(catalogInfo.thumbSize)})
                                     </p>
                                 </div>
                             </div>
                         ) : (
-                            <p className="text-gray-500">Impossible de charger les informations</p>
+                            <p className="text-gray-500">Unable to load information</p>
                         )}
                     </div>
 
@@ -344,7 +344,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                     <div className="space-y-3">
                         <h3 className="text-sm font-medium text-gray-300 flex items-center gap-2">
                             <Plus size={16} />
-                            Gestion des catalogues
+                            Catalog Management
                         </h3>
 
                         <div className="flex gap-2">
@@ -353,37 +353,37 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                                 className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-sm"
                             >
                                 <Plus size={16} />
-                                Nouveau catalogue
+                                New Catalog
                             </button>
                             <button
                                 onClick={handleOpenExistingCatalog}
                                 className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded text-sm"
                             >
                                 <Folder size={16} />
-                                Ouvrir un catalogue
+                                Open Catalog
                             </button>
                         </div>
 
                         {showNewCatalogForm && (
                             <div className="bg-gray-800 rounded-lg p-4 space-y-3 border border-gray-700">
                                 <div>
-                                    <label className="text-xs text-gray-500 block mb-1">Nom du catalogue</label>
+                                    <label className="text-xs text-gray-500 block mb-1">Catalog Name</label>
                                     <input
                                         type="text"
                                         value={newCatalogName}
                                         onChange={(e) => setNewCatalogName(e.target.value)}
-                                        placeholder="Mon Catalogue Photo"
+                                        placeholder="My Photo Catalog"
                                         className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
                                     />
                                 </div>
 
                                 <div>
-                                    <label className="text-xs text-gray-500 block mb-1">Emplacement</label>
+                                    <label className="text-xs text-gray-500 block mb-1">Location</label>
                                     <div className="flex gap-2">
                                         <input
                                             type="text"
                                             value={newCatalogLocation}
-                                            placeholder="Sélectionnez un dossier..."
+                                            placeholder="Select a folder..."
                                             className="flex-1 px-3 py-2 bg-gray-900 border border-gray-700 rounded text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
                                             readOnly
                                         />
@@ -391,7 +391,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                                             onClick={handleSelectNewCatalogLocation}
                                             className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded text-sm"
                                         >
-                                            Parcourir...
+                                            Browse...
                                         </button>
                                     </div>
                                 </div>
@@ -405,12 +405,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                                         className="rounded border-gray-700 bg-gray-900 text-blue-600 focus:ring-blue-500"
                                     />
                                     <label htmlFor="copyCurrentData" className="text-sm text-gray-400">
-                                        Copier les données du catalogue actuel
+                                        Copy current catalog data
                                     </label>
                                 </div>
 
                                 <p className="text-xs text-gray-500">
-                                    Structure: [Nom].pcdb + [Nom] Previews/ (16 dossiers hex comme Lightroom)
+                                    Structure: [Name].pcdb + [Name] Previews/ (16 hex folders like Lightroom)
                                 </p>
 
                                 <div className="flex justify-end gap-2 pt-2 border-t border-gray-700">
@@ -418,7 +418,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                                         onClick={() => setShowNewCatalogForm(false)}
                                         className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded text-sm"
                                     >
-                                        Annuler
+                                        Cancel
                                     </button>
                                     <button
                                         onClick={handleCreateNewCatalog}
@@ -428,12 +428,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                                         {isCreatingCatalog ? (
                                             <>
                                                 <Loader2 size={16} className="animate-spin" />
-                                                Création...
+                                                Creating...
                                             </>
                                         ) : (
                                             <>
                                                 <Plus size={16} />
-                                                Créer le catalogue
+                                                Create Catalog
                                             </>
                                         )}
                                     </button>
@@ -453,11 +453,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                     <div className="space-y-3">
                         <h3 className="text-sm font-medium text-gray-300 flex items-center gap-2">
                             <FolderOpen size={16} />
-                            Déplacer le catalogue
+                            Move Catalog
                         </h3>
 
                         <p className="text-xs text-gray-500">
-                            Choisissez un nouvel emplacement pour votre catalogue. Tous les fichiers seront copiés vers le nouvel emplacement.
+                            Choose a new location for your catalog. All files will be copied to the new location.
                         </p>
 
                         <div className="flex gap-2">
@@ -465,7 +465,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                                 type="text"
                                 value={newPath}
                                 onChange={(e) => setNewPath(e.target.value)}
-                                placeholder="Sélectionnez un dossier..."
+                                placeholder="Select a folder..."
                                 className="flex-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
                                 readOnly
                             />
@@ -473,7 +473,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                                 onClick={handleSelectPath}
                                 className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded text-sm"
                             >
-                                Parcourir...
+                                Browse...
                             </button>
                         </div>
 
@@ -487,12 +487,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                                     {isMigrating ? (
                                         <>
                                             <Loader2 size={16} className="animate-spin" />
-                                            Migration en cours...
+                                            Migration in progress...
                                         </>
                                     ) : (
                                         <>
                                             <HardDrive size={16} />
-                                            Déplacer le catalogue
+                                            Move Catalog
                                         </>
                                     )}
                                 </button>
@@ -508,12 +508,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                                 {migrationResult.success ? (
                                     <>
                                         <Check size={16} className="mt-0.5" />
-                                        <span className="text-sm">Catalogue déplacé avec succès! Redémarrez l'application pour appliquer les changements.</span>
+                                        <span className="text-sm">Catalog moved successfully! Restart the application to apply changes.</span>
                                     </>
                                 ) : (
                                     <>
                                         <AlertTriangle size={16} className="mt-0.5" />
-                                        <span className="text-sm">Erreur: {migrationResult.error}</span>
+                                        <span className="text-sm">Error: {migrationResult.error}</span>
                                     </>
                                 )}
                             </div>
@@ -524,11 +524,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                     <div className="space-y-3">
                         <h3 className="text-sm font-medium text-gray-300 flex items-center gap-2">
                             <RefreshCw size={16} />
-                            Hiérarchie des dossiers
+                            Folder Hierarchy
                         </h3>
 
                         <p className="text-xs text-gray-500">
-                            Reconstruire la hiérarchie des dossiers pour afficher l'arborescence correctement dans le panneau latéral.
+                            Rebuild the folder hierarchy to display the tree correctly in the sidebar.
                         </p>
 
                         <div className="flex items-center gap-2">
@@ -540,12 +540,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                                 {isRebuilding ? (
                                     <>
                                         <Loader2 size={16} className="animate-spin" />
-                                        Reconstruction...
+                                        Rebuilding...
                                     </>
                                 ) : (
                                     <>
                                         <RefreshCw size={16} />
-                                        Reconstruire la hiérarchie
+                                        Rebuild Hierarchy
                                     </>
                                 )}
                             </button>
@@ -555,7 +555,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                             <div className="flex items-start gap-2 p-3 rounded bg-green-900/50 text-green-300">
                                 <Check size={16} className="mt-0.5" />
                                 <span className="text-sm">
-                                    Hiérarchie reconstruite: {rebuildResult.updated} dossiers mis à jour, {rebuildResult.created} créés
+                                    Hierarchy rebuilt: {rebuildResult.updated} folders updated, {rebuildResult.created} created
                                 </span>
                             </div>
                         )}
@@ -565,11 +565,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                     <div className="space-y-3">
                         <h3 className="text-sm font-medium text-gray-300 flex items-center gap-2">
                             <Database size={16} />
-                            Synchronisation Lightroom
+                            Lightroom Sync
                         </h3>
 
                         <p className="text-xs text-gray-500">
-                            Synchronisez ou importez les photos depuis votre catalogue Lightroom Classic.
+                            Sync or import photos from your Lightroom Classic catalog.
                         </p>
 
                         {lightroomProgress && (
@@ -600,7 +600,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                                 {isSyncingLightroom ? (
                                     <>
                                         <Loader2 size={16} className="animate-spin" />
-                                        Synchronisation...
+                                        Syncing...
                                     </>
                                 ) : (
                                     <>
@@ -636,12 +636,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                                 {isRegenerating ? (
                                     <>
                                         <Loader2 size={16} className="animate-spin" />
-                                        Régénération...
+                                        Regenerating...
                                     </>
                                 ) : (
                                     <>
                                         <Image size={16} />
-                                        Régénérer vignettes
+                                        Regenerate Thumbnails
                                     </>
                                 )}
                             </button>
@@ -652,7 +652,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                     <div className="space-y-3">
                         <h3 className="text-sm font-medium text-gray-300 flex items-center gap-2">
                             <Image size={16} />
-                            Statistiques
+                            Statistics
                         </h3>
 
                         {catalogInfo && (
@@ -661,13 +661,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                                     <p className="text-2xl font-bold text-white">
                                         {catalogInfo.thumbCount.toLocaleString()}
                                     </p>
-                                    <p className="text-xs text-gray-500">Vignettes en cache</p>
+                                    <p className="text-xs text-gray-500">Cached thumbnails</p>
                                 </div>
                                 <div className="bg-gray-800 rounded-lg p-3">
                                     <p className="text-2xl font-bold text-white">
                                         {formatBytes(catalogInfo.dbSize + catalogInfo.thumbSize)}
                                     </p>
-                                    <p className="text-xs text-gray-500">Espace total utilisé</p>
+                                    <p className="text-xs text-gray-500">Total space used</p>
                                 </div>
                             </div>
                         )}
@@ -678,7 +678,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                         <div className="flex items-center justify-between">
                             <h3 className="text-sm font-medium text-gray-300 flex items-center gap-2">
                                 <Terminal size={16} />
-                                Journal de l'application
+                                Application Log
                             </h3>
                             <button
                                 onClick={() => {
@@ -689,7 +689,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                                 }}
                                 className="text-xs text-blue-400 hover:text-blue-300"
                             >
-                                {showLogs ? 'Masquer' : 'Afficher'}
+                                {showLogs ? 'Hide' : 'Show'}
                             </button>
                         </div>
 
@@ -703,20 +703,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                                             onChange={(e) => setLogFilter(e.target.value as any)}
                                             className="text-xs bg-gray-900 border border-gray-700 rounded px-2 py-1 text-gray-300"
                                         >
-                                            <option value="all">Tous</option>
-                                            <option value="error">Erreurs</option>
-                                            <option value="warn">Avertissements</option>
-                                            <option value="log">Infos</option>
+                                            <option value="all">All</option>
+                                            <option value="error">Errors</option>
+                                            <option value="warn">Warnings</option>
+                                            <option value="log">Info</option>
                                         </select>
                                         <span className="text-xs text-gray-500">
-                                            {logs.filter(l => logFilter === 'all' || l.level === logFilter).length} entrées
+                                            {logs.filter(l => logFilter === 'all' || l.level === logFilter).length} entries
                                         </span>
                                     </div>
                                     <div className="flex items-center gap-2">
                                         <button
                                             onClick={() => setLogs([...appLogs])}
                                             className="p-1 text-gray-400 hover:text-white hover:bg-gray-700 rounded"
-                                            title="Rafraîchir"
+                                            title="Refresh"
                                         >
                                             <RefreshCw size={14} />
                                         </button>
@@ -729,7 +729,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                                                 navigator.clipboard.writeText(text);
                                             }}
                                             className="p-1 text-gray-400 hover:text-white hover:bg-gray-700 rounded"
-                                            title="Copier"
+                                            title="Copy"
                                         >
                                             <Copy size={14} />
                                         </button>
@@ -739,7 +739,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                                                 setLogs([]);
                                             }}
                                             className="p-1 text-gray-400 hover:text-red-400 hover:bg-gray-700 rounded"
-                                            title="Effacer"
+                                            title="Clear"
                                         >
                                             <Trash2 size={14} />
                                         </button>
@@ -776,7 +776,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                                         ))}
                                     {logs.length === 0 && (
                                         <div className="px-3 py-4 text-center text-gray-500">
-                                            Aucun log disponible
+                                            No logs available
                                         </div>
                                     )}
                                     <div ref={logsEndRef} />
@@ -792,7 +792,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                         onClick={onClose}
                         className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded text-sm"
                     >
-                        Fermer
+                        Close
                     </button>
                 </div>
             </div>

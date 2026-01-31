@@ -149,8 +149,8 @@ const App: React.FC = () => {
                 if (result.success) {
                     // Reload the app data after opening a new catalog
                     window.location.reload();
-                } else if (result.error && result.error !== 'Annulé') {
-                    alert(`Erreur: ${result.error}`);
+                } else if (result.error && result.error !== 'Cancelled') {
+                    alert(`Error: ${result.error}`);
                 }
             }),
             window.api.onMenuImport(async () => {

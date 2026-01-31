@@ -270,7 +270,7 @@ export const LoupeView: React.FC = () => {
         return (
             <div className="flex-1 flex items-center justify-center bg-gray-900 text-gray-400">
                 <div className="text-center">
-                    <p className="text-lg mb-2">Aucune photo sélectionnée</p>
+                    <p className="text-lg mb-2">No photo selected</p>
                     <p className="text-xs text-gray-600">Photos: {photos.length} | ID: {activePhotoId || 'null'}</p>
                 </div>
             </div>
@@ -401,7 +401,7 @@ export const LoupeView: React.FC = () => {
                 {imageError && (
                     <div className="absolute inset-0 flex items-center justify-center bg-gray-900/80">
                         <div className="text-center text-red-400 p-4">
-                            <p className="text-lg mb-2">Image non chargée</p>
+                            <p className="text-lg mb-2">Image not loaded</p>
                             <p className="text-xs text-gray-500 max-w-md break-all">{imageError}</p>
                         </div>
                     </div>
@@ -472,7 +472,7 @@ export const LoupeView: React.FC = () => {
                         className="w-full px-4 py-2 text-left text-sm text-white hover:bg-gray-700 flex items-center gap-2"
                     >
                         <span className="text-xs font-bold text-red-500">AFI</span>
-                        Ouvrir dans Affinity Photo
+                        Open in Affinity Photo
                     </button>
                     <button
                         onClick={() => {
@@ -481,7 +481,7 @@ export const LoupeView: React.FC = () => {
                         }}
                         className="w-full px-4 py-2 text-left text-sm text-white hover:bg-gray-700"
                     >
-                        Afficher dans le Finder
+                        Show in Finder
                     </button>
                 </div>
             )}

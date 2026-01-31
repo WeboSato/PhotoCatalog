@@ -24,7 +24,7 @@ export const DeleteDialog: React.FC<DeleteDialogProps> = ({
 }) => {
     if (!isOpen) return null;
 
-    const photoText = photoCount === 1 ? 'cette photo' : `ces ${photoCount} photos`;
+    const photoText = photoCount === 1 ? 'this photo' : `these ${photoCount} photos`;
     const hasPhotosToShow = photos && photos.length > 0;
 
     return (
@@ -40,7 +40,7 @@ export const DeleteDialog: React.FC<DeleteDialogProps> = ({
                 {/* Header */}
                 <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
                     <h2 className="text-lg font-semibold text-white">
-                        {showRejectedMode ? 'Supprimer les photos rejetées' : `Supprimer ${photoCount} photo${photoCount > 1 ? 's' : ''}`}
+                        {showRejectedMode ? 'Delete rejected photos' : `Delete ${photoCount} photo${photoCount > 1 ? 's' : ''}`}
                     </h2>
                     <button
                         onClick={onClose}
@@ -54,7 +54,7 @@ export const DeleteDialog: React.FC<DeleteDialogProps> = ({
                 {hasPhotosToShow && (
                     <div className="p-4 border-b border-gray-700 max-h-[300px] overflow-y-auto">
                         <p className="text-gray-400 text-xs mb-3">
-                            {showRejectedMode ? 'Photos marquées comme rejetées:' : 'Photos sélectionnées:'}
+                            {showRejectedMode ? 'Photos marked as rejected:' : 'Selected photos:'}
                         </p>
                         <div className="grid grid-cols-5 gap-2">
                             {photos.map((photo) => (
@@ -84,7 +84,7 @@ export const DeleteDialog: React.FC<DeleteDialogProps> = ({
                 {/* Content */}
                 <div className="p-4">
                     <p className="text-gray-300 text-sm mb-4">
-                        Que voulez-vous faire avec {photoText}?
+                        What do you want to do with {photoText}?
                     </p>
 
                     {/* Option 1: Delete permanently */}
@@ -97,10 +97,10 @@ export const DeleteDialog: React.FC<DeleteDialogProps> = ({
                         </div>
                         <div className="flex-1">
                             <h3 className="text-white font-medium group-hover:text-red-300">
-                                Supprimer définitivement
+                                Delete permanently
                             </h3>
                             <p className="text-gray-400 text-xs mt-0.5">
-                                Supprime les fichiers du disque. Cette action est irréversible.
+                                Deletes files from disk. This action is irreversible.
                             </p>
                         </div>
                     </button>
@@ -115,10 +115,10 @@ export const DeleteDialog: React.FC<DeleteDialogProps> = ({
                         </div>
                         <div className="flex-1">
                             <h3 className="text-white font-medium group-hover:text-blue-300">
-                                Masquer de la bibliothèque
+                                Hide from library
                             </h3>
                             <p className="text-gray-400 text-xs mt-0.5">
-                                Retire les photos du catalogue mais conserve les fichiers sur le disque.
+                                Removes photos from catalog but keeps files on disk.
                             </p>
                         </div>
                     </button>
@@ -130,7 +130,7 @@ export const DeleteDialog: React.FC<DeleteDialogProps> = ({
                         onClick={onClose}
                         className="px-4 py-2 text-sm text-gray-300 hover:text-white hover:bg-gray-700 rounded transition-colors"
                     >
-                        Annuler
+                        Cancel
                     </button>
                 </div>
             </div>

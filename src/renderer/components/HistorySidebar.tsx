@@ -155,7 +155,7 @@ export const HistorySidebar: React.FC = React.memo(() => {
             <div className="flex-1 overflow-y-auto py-2">
                 {/* Navigator - Photo Preview with viewport indicator */}
                 <SidebarSection
-                    title="Navigateur"
+                    title="Navigator"
                     icon={<Image size={16} />}
                 >
                     <div className="px-3 py-2">
@@ -165,7 +165,7 @@ export const HistorySidebar: React.FC = React.memo(() => {
 
                 {/* Presets */}
                 <SidebarSection
-                    title="Paramètres prédéfinis"
+                    title="Presets"
                     icon={<Sliders size={16} />}
                 >
                     <div className="px-2 space-y-0.5 max-h-48 overflow-y-auto">
@@ -186,7 +186,7 @@ export const HistorySidebar: React.FC = React.memo(() => {
 
                 {/* History Panel */}
                 <SidebarSection
-                    title="Historique"
+                    title="History"
                     icon={<History size={16} />}
                     action={
                         photoHistory.length > 0 ? (
@@ -203,13 +203,13 @@ export const HistorySidebar: React.FC = React.memo(() => {
                     <div className="px-2">
                         {photoHistory.length === 0 ? (
                             <p className="px-2 py-3 text-xs text-gray-500 text-center">
-                                Aucune modification
+                                No changes
                             </p>
                         ) : (
                             <div className="space-y-0.5">
                                 {/* Current state indicator */}
                                 <div className="px-2 py-1.5 text-xs bg-blue-600/20 text-blue-400 rounded border border-blue-600/30">
-                                    État actuel
+                                    Current state
                                 </div>
 
                                 {/* History entries */}
@@ -217,7 +217,7 @@ export const HistorySidebar: React.FC = React.memo(() => {
                                     <div
                                         key={entry.id}
                                         className={`px-2 py-1.5 text-xs text-gray-300 hover:bg-gray-700 rounded cursor-pointer group transition-colors ${entry.devSettingsSnapshot ? 'border-l-2 border-transparent hover:border-blue-500' : ''}`}
-                                        title={`${entry.action}\n${new Date(entry.timestamp).toLocaleString()}${entry.devSettingsSnapshot ? '\nCliquez pour restaurer' : ''}`}
+                                        title={`${entry.action}\n${new Date(entry.timestamp).toLocaleString()}${entry.devSettingsSnapshot ? '\nClick to restore' : ''}`}
                                         onClick={() => {
                                             if (entry.devSettingsSnapshot) {
                                                 restoreFromHistory(entry);

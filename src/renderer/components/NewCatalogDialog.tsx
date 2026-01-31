@@ -12,14 +12,14 @@ export const NewCatalogDialog: React.FC<NewCatalogDialogProps> = ({
     onClose,
     onCreated
 }) => {
-    const [catalogName, setCatalogName] = useState('Mon Catalogue');
+    const [catalogName, setCatalogName] = useState('My Catalog');
     const [location, setLocation] = useState('');
     const [isCreating, setIsCreating] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         if (isOpen) {
-            setCatalogName('Mon Catalogue');
+            setCatalogName('My Catalog');
             setLocation('');
             setIsCreating(false);
             setError(null);
@@ -37,11 +37,11 @@ export const NewCatalogDialog: React.FC<NewCatalogDialogProps> = ({
 
     const handleCreate = async () => {
         if (!catalogName.trim()) {
-            setError('Veuillez entrer un nom pour le catalogue');
+            setError('Please enter a catalog name');
             return;
         }
         if (!location) {
-            setError('Veuillez sélectionner un emplacement');
+            setError('Please select a location');
             return;
         }
 
@@ -61,15 +61,15 @@ export const NewCatalogDialog: React.FC<NewCatalogDialogProps> = ({
                 if (openResult.success) {
                     onCreated();
                 } else {
-                    setError(openResult.error || 'Erreur lors de l\'ouverture du catalogue');
+                    setError(openResult.error || 'Error opening catalog');
                     setIsCreating(false);
                 }
             } else {
-                setError(result.error || 'Erreur lors de la création du catalogue');
+                setError(result.error || 'Error creating catalog');
                 setIsCreating(false);
             }
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Erreur inconnue');
+            setError(err instanceof Error ? err.message : 'Unknown error');
             setIsCreating(false);
         }
     };
@@ -87,10 +87,10 @@ export const NewCatalogDialog: React.FC<NewCatalogDialogProps> = ({
                         <FolderPlus size={24} className="text-green-400" />
                         <div>
                             <h2 className="text-lg font-semibold text-white">
-                                Nouveau catalogue
+                                New Catalog
                             </h2>
                             <p className="text-sm text-green-300">
-                                Créer un nouveau catalogue PhotoCatalog
+                                Create a new PhotoCatalog catalog
                             </p>
                         </div>
                     </div>
@@ -108,14 +108,14 @@ export const NewCatalogDialog: React.FC<NewCatalogDialogProps> = ({
                     {/* Catalog Name */}
                     <div>
                         <label className="block text-sm font-medium text-gray-300 mb-1">
-                            Nom du catalogue
+                            Catalog Name
                         </label>
                         <input
                             type="text"
                             value={catalogName}
                             onChange={(e) => setCatalogName(e.target.value)}
                             className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-green-500"
-                            placeholder="Mon Catalogue"
+                            placeholder="My Catalog"
                             disabled={isCreating}
                         />
                     </div>
@@ -123,7 +123,7 @@ export const NewCatalogDialog: React.FC<NewCatalogDialogProps> = ({
                     {/* Location */}
                     <div>
                         <label className="block text-sm font-medium text-gray-300 mb-1">
-                            Emplacement
+                            Location
                         </label>
                         <div className="flex gap-2">
                             <input
@@ -131,7 +131,7 @@ export const NewCatalogDialog: React.FC<NewCatalogDialogProps> = ({
                                 value={location}
                                 readOnly
                                 className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none"
-                                placeholder="Sélectionner un dossier..."
+                                placeholder="Select a folder..."
                             />
                             <button
                                 onClick={handleSelectLocation}
@@ -139,12 +139,12 @@ export const NewCatalogDialog: React.FC<NewCatalogDialogProps> = ({
                                 disabled={isCreating}
                             >
                                 <FolderOpen size={16} />
-                                Parcourir
+                                Browse
                             </button>
                         </div>
                         {location && (
                             <p className="mt-2 text-xs text-gray-400">
-                                Le catalogue sera créé dans: {location}/{catalogName.trim() || 'Mon Catalogue'}
+                                The catalog will be created in: {location}/{catalogName.trim() || 'My Catalog'}
                             </p>
                         )}
                     </div>
@@ -164,7 +164,7 @@ export const NewCatalogDialog: React.FC<NewCatalogDialogProps> = ({
                         className="px-4 py-2 text-gray-300 hover:text-white hover:bg-gray-700 rounded-lg transition-colors"
                         disabled={isCreating}
                     >
-                        Annuler
+                        Cancel
                     </button>
                     <button
                         onClick={handleCreate}
@@ -174,12 +174,12 @@ export const NewCatalogDialog: React.FC<NewCatalogDialogProps> = ({
                         {isCreating ? (
                             <>
                                 <Loader2 size={16} className="animate-spin" />
-                                Création...
+                                Creating...
                             </>
                         ) : (
                             <>
                                 <FolderPlus size={16} />
-                                Créer le catalogue
+                                Create Catalog
                             </>
                         )}
                     </button>

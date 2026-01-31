@@ -588,17 +588,17 @@ export const useCatalogStore = create<CatalogState>()(
             // Add to history with snapshot of PREVIOUS state (before this change)
             const { addEditHistory } = get();
             const labelMap: Record<string, string> = {
-                exposure: 'Exposition',
-                contrast: 'Contraste',
-                highlights: 'Hautes lumières',
-                shadows: 'Ombres',
-                whites: 'Blancs',
-                blacks: 'Noirs',
-                clarity: 'Clarté',
+                exposure: 'Exposure',
+                contrast: 'Contrast',
+                highlights: 'Highlights',
+                shadows: 'Shadows',
+                whites: 'Whites',
+                blacks: 'Blacks',
+                clarity: 'Clarity',
                 vibrance: 'Vibrance',
                 saturation: 'Saturation',
-                temperature: 'Température',
-                tint: 'Teinte'
+                temperature: 'Temperature',
+                tint: 'Tint'
             };
             addEditHistory(photoId, `${labelMap[key] || key} → ${value > 0 ? '+' : ''}${value}`, previousValue, value, previousSettings);
 
@@ -625,7 +625,7 @@ export const useCatalogStore = create<CatalogState>()(
             newPhotoDevSettings.set(photoId, defaultDevelopmentSettings);
 
             const { addEditHistory } = get();
-            addEditHistory(photoId, 'Réinitialisation', previousSettings, defaultDevelopmentSettings, previousSettings);
+            addEditHistory(photoId, 'Reset', previousSettings, defaultDevelopmentSettings, previousSettings);
 
             // Save to database
             window.api.updatePhoto(photoId, { develop_settings: JSON.stringify(defaultDevelopmentSettings) });

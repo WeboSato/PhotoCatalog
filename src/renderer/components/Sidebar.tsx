@@ -142,7 +142,7 @@ export const Sidebar: React.FC = React.memo(() => {
         return unsubscribe;
     }, []);
 
-    const monthNames = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun', 'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'];
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
     // Face scanning function
     const scanFaces = async () => {
@@ -216,7 +216,7 @@ export const Sidebar: React.FC = React.memo(() => {
 
         } catch (error) {
             console.error('[FaceScan] Error:', error);
-            alert('Erreur lors du scan: ' + (error as Error).message);
+            alert('Error during scan: ' + (error as Error).message);
         } finally {
             setIsScanning(false);
             setScanProgress({ current: 0, total: 0, phase: '' });
@@ -363,7 +363,7 @@ export const Sidebar: React.FC = React.memo(() => {
                         onClick={() => getStore().setFilters({ rating: { min: 4 } })}
                     />
                     <SidebarItem
-                        label="Priorité"
+                        label="Priority"
                         isActive={filters.flag?.includes('picked')}
                         onClick={() => getStore().setFilters({ flag: ['picked'] })}
                     />
@@ -503,7 +503,7 @@ export const Sidebar: React.FC = React.memo(() => {
                                 onClick={scanFaces}
                                 disabled={isScanning}
                                 className="p-1 text-gray-500 hover:text-blue-400 rounded disabled:opacity-50"
-                                title="Scan faces / Scanner les visages"
+                                title="Scan faces"
                             >
                                 {isScanning ? (
                                     <Loader2 size={14} className="animate-spin" />
@@ -513,7 +513,7 @@ export const Sidebar: React.FC = React.memo(() => {
                             </button>
                             <button
                                 onClick={async () => {
-                                    const name = prompt('Person name / Nom de la personne:');
+                                    const name = prompt('Person name:');
                                     if (name) {
                                         await window.api.createPerson(name);
                                         const updatedPeople = await window.api.getPeople();
@@ -521,14 +521,14 @@ export const Sidebar: React.FC = React.memo(() => {
                                     }
                                 }}
                                 className="p-1 text-gray-500 hover:text-white rounded"
-                                title="Add person / Ajouter une personne"
+                                title="Add person"
                             >
                                 <Plus size={14} />
                             </button>
                             {people.length > 0 && (
                                 <button
                                     onClick={async () => {
-                                        if (confirm('Clear all face data? This will remove all detected faces and people. You can re-scan afterward.\n\nEffacer toutes les données de visages? Vous pourrez rescanner après.')) {
+                                        if (confirm('Clear all face data? You can re-scan afterward.')) {
                                             await window.api.clearAllFaces();
                                             setPeople([]);
                                             setActivePersonId(null);
@@ -536,7 +536,7 @@ export const Sidebar: React.FC = React.memo(() => {
                                     }}
                                     disabled={isScanning}
                                     className="p-1 text-gray-500 hover:text-red-400 rounded disabled:opacity-50"
-                                    title="Clear all faces / Effacer tous les visages"
+                                    title="Clear all faces"
                                 >
                                     <Trash2 size={14} />
                                 </button>
@@ -574,7 +574,7 @@ export const Sidebar: React.FC = React.memo(() => {
                                     getStore().setPhotos(photos);
                                 }}
                                 onDoubleClick={async () => {
-                                    const newName = prompt('Rename person / Renommer:', person.name);
+                                    const newName = prompt('Rename:', person.name);
                                     if (newName && newName !== person.name) {
                                         await window.api.updatePerson(person.id, newName);
                                         const updatedPeople = await window.api.getPeople();
@@ -628,7 +628,7 @@ export const Sidebar: React.FC = React.memo(() => {
                         hover:border-blue-400/50 hover:shadow-lg hover:shadow-blue-500/10"
                 >
                     <Plus size={16} />
-                    Importer
+                    Import
                 </button>
 
                 <button
@@ -637,7 +637,7 @@ export const Sidebar: React.FC = React.memo(() => {
                         hover:bg-gray-800"
                 >
                     <Settings size={14} />
-                    Paramètres
+                    Settings
                 </button>
             </div>
 
