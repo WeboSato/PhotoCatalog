@@ -6,9 +6,10 @@ process.on('uncaughtException', (err: Error & { code?: string }) => {
     console.error('Uncaught Exception:', err);
 });
 
-import { app, BrowserWindow, ipcMain, dialog, Menu, shell, protocol, net } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, Menu, shell, protocol, net, clipboard } from 'electron';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 
 import catalogDb from '../database/Database';
 import thumbnailService from '../services/ThumbnailService';
@@ -54,6 +55,29 @@ async function recoverExistingThumbnails(photos: any[]): Promise<number> {
 }
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+
+// Get system info for bug reports
+function getSystemInfo(): string {
+    const electronVersion = process.versions.electron;
+    const nodeVersion = process.versions.node;
+    const chromeVersion = process.versions.chrome;
+    const v8Version = process.versions.v8;
+
+    return `PhotoCatalog ${app.getVersion()}
+─────────────────────────────
+OS: ${os.type()} ${os.release()} (${os.arch()})
+Platform: ${process.platform}
+CPU: ${os.cpus()[0]?.model || 'Unknown'}
+Memory: ${Math.round(os.totalmem() / 1024 / 1024 / 1024)} GB
+─────────────────────────────
+Electron: ${electronVersion}
+Node.js: ${nodeVersion}
+Chrome: ${chromeVersion}
+V8: ${v8Version}
+─────────────────────────────
+Locale: ${app.getLocale()}
+User Data: ${app.getPath('userData')}`;
+}
 
 function createWindow(): void {
     // Get screen dimensions to start maximized
@@ -117,6 +141,28 @@ function createMenu(): void {
                 {
                     label: 'Check for Updates...',
                     click: () => updateService.checkForUpdates(false)
+                },
+                { type: 'separator' },
+                {
+                    label: 'Report Bug...',
+                    click: () => {
+                        const systemInfo = getSystemInfo();
+                        dialog.showMessageBox(mainWindow!, {
+                            type: 'info',
+                            title: 'Report Bug',
+                            message: 'System Information',
+                            detail: systemInfo + '\n\nClick "Copy" to copy this info to your clipboard, then paste it in your bug report on GitHub.',
+                            buttons: ['Copy & Open GitHub', 'Copy', 'Close'],
+                            defaultId: 0
+                        }).then(({ response }) => {
+                            if (response === 0) {
+                                clipboard.writeText(systemInfo);
+                                shell.openExternal('https://github.com/WeboSato/PhotoCatalog/issues/new');
+                            } else if (response === 1) {
+                                clipboard.writeText(systemInfo);
+                            }
+                        });
+                    }
                 },
                 { type: 'separator' },
                 { role: 'services' },
