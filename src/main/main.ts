@@ -20,6 +20,7 @@ import lightroomImportService from '../services/LightroomImportService';
 import { XmpService } from './services/XmpService';
 import settingsService from './services/SettingsService';
 import catalogManagerService from './services/CatalogManagerService';
+import { updateService } from './services/UpdateService';
 import crypto from 'crypto';
 
 let mainWindow: BrowserWindow | null = null;
@@ -96,6 +97,14 @@ function createWindow(): void {
         mainWindow = null;
     });
 
+    // Initialize update service
+    updateService.setMainWindow(mainWindow);
+
+    // Check for updates silently on startup (after 5 seconds)
+    setTimeout(() => {
+        updateService.checkForUpdates(true);
+    }, 5000);
+
     createMenu();
 }
 
@@ -105,6 +114,10 @@ function createMenu(): void {
             label: 'PhotoCatalog',
             submenu: [
                 { role: 'about' },
+                {
+                    label: 'Check for Updates...',
+                    click: () => updateService.checkForUpdates(false)
+                },
                 { type: 'separator' },
                 { role: 'services' },
                 { type: 'separator' },
