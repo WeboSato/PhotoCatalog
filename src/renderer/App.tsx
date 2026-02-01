@@ -10,6 +10,7 @@ import { InfoPanel } from './components/InfoPanel';
 import { ImportModal } from './components/ImportModal';
 import { ImportDialog, ImportOptions } from './components/ImportDialog';
 import { NewCatalogDialog } from './components/NewCatalogDialog';
+import { OnboardingWizard } from './components/OnboardingWizard';
 import './styles/globals.css';
 
 // Lazy load heavy components
@@ -34,6 +35,11 @@ const App: React.FC = () => {
 
     // New catalog dialog state
     const [newCatalogDialogOpen, setNewCatalogDialogOpen] = useState(false);
+
+    // Onboarding wizard state - show on first launch
+    const [showOnboarding, setShowOnboarding] = useState(() => {
+        return !localStorage.getItem('photocatalog-onboarding-complete');
+    });
 
     // Load initial data once on mount
     useEffect(() => {
@@ -393,6 +399,12 @@ const App: React.FC = () => {
                     setNewCatalogDialogOpen(false);
                     window.location.reload();
                 }}
+            />
+
+            {/* Onboarding Wizard - First Launch */}
+            <OnboardingWizard
+                isOpen={showOnboarding}
+                onComplete={() => setShowOnboarding(false)}
             />
         </div>
     );

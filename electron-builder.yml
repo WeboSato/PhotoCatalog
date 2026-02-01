@@ -1,0 +1,114 @@
+# Electron Builder Configuration
+# Professional DMG installer for PhotoCatalog
+
+appId: com.photocatalog.app
+productName: PhotoCatalog
+copyright: Copyright (c) 2024 WeboSato
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - dist/**/*
+  - node_modules/**/*
+  - package.json
+
+asarUnpack:
+  - dist/renderer/models/**/*
+
+extraResources:
+  - from: public/models
+    to: models
+  - from: resources/
+    to: resources/
+    filter:
+      - "**/*"
+
+# macOS configuration
+mac:
+  category: public.app-category.photography
+  icon: resources/icon.icns
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+    - target: zip
+      arch:
+        - arm64
+        - x64
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  darkModeSupport: true
+
+# DMG configuration with professional appearance
+dmg:
+  # Window appearance
+  window:
+    width: 660
+    height: 400
+
+  # Background image (supports Retina @2x)
+  background: build/dmg-background.png
+
+  # Icon size in the DMG window
+  iconSize: 120
+
+  # Contents positioning
+  contents:
+    # App icon on the left
+    - x: 180
+      y: 170
+      type: file
+
+    # Applications folder alias on the right
+    - x: 480
+      y: 170
+      type: link
+      path: /Applications
+
+  # Title of the DMG volume
+  title: PhotoCatalog
+
+  # Finder icon text size
+  iconTextSize: 14
+
+  # Format: UDBZ for best compression with compatibility
+  format: UDBZ
+
+# Windows configuration
+win:
+  icon: resources/icon.ico
+  target:
+    - nsis
+    - portable
+
+# NSIS installer configuration
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  installerIcon: resources/icon.ico
+  uninstallerIcon: resources/icon.ico
+  installerHeaderIcon: resources/icon.ico
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+
+# Linux configuration
+linux:
+  icon: resources/icons
+  target:
+    - AppImage
+    - deb
+  category: Graphics
+  maintainer: WeboSato
+  vendor: WeboSato
+  synopsis: Professional photo catalog application
+  description: Professional photo catalog and management application inspired by Adobe Lightroom
+
+# Publish configuration (for future auto-update)
+publish:
+  provider: github
+  releaseType: release
