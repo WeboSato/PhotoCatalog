@@ -21,9 +21,6 @@ PhotoCatalog is a professional photo catalog and management application, designe
 ### Grid View
 ![Grid View](docs/screenshots/grid-view.png)
 
-### Loupe View
-![Loupe View](docs/screenshots/loupe-view.png)
-
 ### Develop Module
 ![Develop View](docs/screenshots/develop-view.png)
 
