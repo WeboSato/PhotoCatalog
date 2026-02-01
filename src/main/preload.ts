@@ -218,6 +218,7 @@ contextBridge.exposeInMainWorld('api', {
     catalogOpen: (catalogPath: string) => ipcRenderer.invoke('catalog:open', catalogPath),
     catalogGetStats: (catalogPath: string) => ipcRenderer.invoke('catalog:getStats', catalogPath),
     catalogSelectAndOpen: () => ipcRenderer.invoke('catalog:selectAndOpen'),
+    scanForCatalogs: () => ipcRenderer.invoke('catalog:scan'),
     onCatalogChanged: (callback: () => void) => {
         ipcRenderer.on('catalog:changed', callback);
         return () => ipcRenderer.removeListener('catalog:changed', callback);
@@ -384,6 +385,7 @@ export interface ElectronAPI {
         lastOpened: string;
     } | null>;
     catalogSelectAndOpen: () => Promise<{ success: boolean; error?: string }>;
+    scanForCatalogs: () => Promise<string[]>;
     onCatalogChanged: (callback: () => void) => () => void;
     onLanguageChange: (callback: (language: string) => void) => () => void;
 }

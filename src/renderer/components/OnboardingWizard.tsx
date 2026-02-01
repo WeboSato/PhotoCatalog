@@ -10,7 +10,10 @@ import {
     Loader2,
     Image,
     Palette,
-    Database
+    Database,
+    Search,
+    HardDrive,
+    Plus
 } from 'lucide-react';
 import { useTranslation } from '../i18n';
 
@@ -19,7 +22,7 @@ interface OnboardingWizardProps {
     onComplete: () => void;
 }
 
-type Step = 'welcome' | 'location' | 'import' | 'complete';
+type Step = 'welcome' | 'existing' | 'location' | 'import' | 'complete';
 
 export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
     isOpen,
@@ -31,6 +34,8 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
     const [location, setLocation] = useState('');
     const [isCreating, setIsCreating] = useState(false);
     const [isImporting, setIsImporting] = useState(false);
+    const [isScanning, setIsScanning] = useState(false);
+    const [foundCatalogs, setFoundCatalogs] = useState<string[]>([]);
     const [importProgress, setImportProgress] = useState({ current: 0, total: 0 });
     const [error, setError] = useState<string | null>(null);
 
@@ -40,11 +45,67 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
             setCatalogName('PhotoCatalog');
             setLocation('');
             setIsCreating(false);
+            setIsScanning(false);
+            setFoundCatalogs([]);
             setError(null);
         }
     }, [isOpen]);
 
     if (!isOpen) return null;
+
+    // Scan for existing catalogs
+    const handleScanCatalogs = async () => {
+        setIsScanning(true);
+        setError(null);
+        try {
+            // Search common locations for catalog.db files
+            const result = await window.api.scanForCatalogs();
+            if (result && result.length > 0) {
+                setFoundCatalogs(result);
+            } else {
+                setFoundCatalogs([]);
+                setError(language === 'fr'
+                    ? 'Aucun catalogue trouvé. Utilisez "Parcourir" pour localiser manuellement.'
+                    : 'No catalogs found. Use "Browse" to locate manually.');
+            }
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Scan error');
+        } finally {
+            setIsScanning(false);
+        }
+    };
+
+    // Browse for existing catalog
+    const handleBrowseExisting = async () => {
+        try {
+            const result = await window.api.catalogSelectAndOpen();
+            if (result.success) {
+                localStorage.setItem('photocatalog-onboarding-complete', 'true');
+                onComplete();
+                window.location.reload();
+            } else if (result.error && result.error !== 'Cancelled') {
+                setError(result.error);
+            }
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Error opening catalog');
+        }
+    };
+
+    // Open a found catalog
+    const handleOpenFoundCatalog = async (catalogPath: string) => {
+        try {
+            const result = await window.api.catalogOpen(catalogPath);
+            if (result.success) {
+                localStorage.setItem('photocatalog-onboarding-complete', 'true');
+                onComplete();
+                window.location.reload();
+            } else {
+                setError(result.error || 'Error opening catalog');
+            }
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Error opening catalog');
+        }
+    };
 
     const handleSelectLocation = async () => {
         const result = await window.api.catalogSelectLocation();
@@ -137,7 +198,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
         window.location.reload();
     };
 
-    const steps: Step[] = ['welcome', 'location', 'import', 'complete'];
+    const steps: Step[] = ['welcome', 'existing', 'location', 'import', 'complete'];
     const currentIndex = steps.indexOf(currentStep);
 
     return (
@@ -199,36 +260,168 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                                     : 'Your Lightroom alternative, optimized for Affinity Photo'}
                             </p>
 
-                            {/* Features */}
-                            <div className="grid grid-cols-3 gap-4 mb-8">
-                                <div className="p-4 bg-gray-700/50 rounded-xl">
-                                    <Image size={28} className="text-blue-400 mx-auto mb-2" />
-                                    <p className="text-sm text-gray-300">
-                                        {language === 'fr' ? 'Organisez vos photos' : 'Organize your photos'}
-                                    </p>
+                            {/* Choice: Existing or New */}
+                            <div className="space-y-4 mb-6">
+                                {/* Existing Catalog Option */}
+                                <button
+                                    onClick={() => setCurrentStep('existing')}
+                                    className="w-full p-6 bg-gradient-to-r from-green-500/20 to-emerald-500/20 hover:from-green-500/30 hover:to-emerald-500/30 border border-green-500/30 rounded-xl text-left transition-all group"
+                                >
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-12 h-12 rounded-full bg-green-500/30 flex items-center justify-center">
+                                            <HardDrive size={24} className="text-green-400" />
+                                        </div>
+                                        <div className="flex-1">
+                                            <h3 className="text-lg font-semibold text-white mb-1">
+                                                {language === 'fr' ? "J'ai déjà un catalogue" : 'I have an existing catalog'}
+                                            </h3>
+                                            <p className="text-sm text-gray-400">
+                                                {language === 'fr'
+                                                    ? 'Ouvrir un catalogue PhotoCatalog existant'
+                                                    : 'Open an existing PhotoCatalog catalog'}
+                                            </p>
+                                        </div>
+                                        <ArrowRight size={20} className="text-gray-400 group-hover:text-green-400 transition-colors" />
+                                    </div>
+                                </button>
+
+                                {/* New Catalog Option */}
+                                <button
+                                    onClick={() => setCurrentStep('location')}
+                                    className="w-full p-6 bg-gradient-to-r from-blue-500/20 to-purple-500/20 hover:from-blue-500/30 hover:to-purple-500/30 border border-blue-500/30 rounded-xl text-left transition-all group"
+                                >
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-12 h-12 rounded-full bg-blue-500/30 flex items-center justify-center">
+                                            <Plus size={24} className="text-blue-400" />
+                                        </div>
+                                        <div className="flex-1">
+                                            <h3 className="text-lg font-semibold text-white mb-1">
+                                                {language === 'fr' ? 'Créer un nouveau catalogue' : 'Create a new catalog'}
+                                            </h3>
+                                            <p className="text-sm text-gray-400">
+                                                {language === 'fr'
+                                                    ? 'Commencer avec un catalogue vide'
+                                                    : 'Start with an empty catalog'}
+                                            </p>
+                                        </div>
+                                        <ArrowRight size={20} className="text-gray-400 group-hover:text-blue-400 transition-colors" />
+                                    </div>
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Existing Catalog Step */}
+                    {currentStep === 'existing' && (
+                        <div className="p-8">
+                            {/* Header */}
+                            <div className="text-center mb-8">
+                                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-500/20 mb-4">
+                                    <HardDrive size={32} className="text-green-400" />
                                 </div>
-                                <div className="p-4 bg-gray-700/50 rounded-xl">
-                                    <Palette size={28} className="text-purple-400 mx-auto mb-2" />
-                                    <p className="text-sm text-gray-300">
-                                        {language === 'fr' ? 'Éditez avec Affinity' : 'Edit with Affinity'}
-                                    </p>
-                                </div>
-                                <div className="p-4 bg-gray-700/50 rounded-xl">
-                                    <Database size={28} className="text-green-400 mx-auto mb-2" />
-                                    <p className="text-sm text-gray-300">
-                                        {language === 'fr' ? 'Catalogue local' : 'Local catalog'}
-                                    </p>
-                                </div>
+                                <h2 className="text-2xl font-bold text-white mb-2">
+                                    {language === 'fr' ? 'Ouvrir un catalogue existant' : 'Open existing catalog'}
+                                </h2>
+                                <p className="text-gray-400">
+                                    {language === 'fr'
+                                        ? 'Scannez votre ordinateur ou parcourez manuellement'
+                                        : 'Scan your computer or browse manually'}
+                                </p>
                             </div>
 
-                            {/* CTA Button */}
-                            <button
-                                onClick={() => setCurrentStep('location')}
-                                className="inline-flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/25 transition-all hover:scale-105"
-                            >
-                                {language === 'fr' ? 'Commencer' : 'Get Started'}
-                                <ArrowRight size={20} />
-                            </button>
+                            {/* Options */}
+                            <div className="space-y-4 mb-6">
+                                {/* Scan Button */}
+                                <button
+                                    onClick={handleScanCatalogs}
+                                    disabled={isScanning}
+                                    className="w-full p-5 bg-gray-700/50 hover:bg-gray-700/70 border border-gray-600 rounded-xl text-left transition-all group disabled:opacity-50"
+                                >
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-10 h-10 rounded-full bg-blue-500/30 flex items-center justify-center">
+                                            {isScanning ? (
+                                                <Loader2 size={20} className="text-blue-400 animate-spin" />
+                                            ) : (
+                                                <Search size={20} className="text-blue-400" />
+                                            )}
+                                        </div>
+                                        <div className="flex-1">
+                                            <h3 className="font-semibold text-white">
+                                                {language === 'fr' ? 'Scanner mon ordinateur' : 'Scan my computer'}
+                                            </h3>
+                                            <p className="text-sm text-gray-400">
+                                                {language === 'fr'
+                                                    ? 'Recherche automatique des catalogues'
+                                                    : 'Automatically search for catalogs'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </button>
+
+                                {/* Browse Button */}
+                                <button
+                                    onClick={handleBrowseExisting}
+                                    className="w-full p-5 bg-gray-700/50 hover:bg-gray-700/70 border border-gray-600 rounded-xl text-left transition-all group"
+                                >
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-10 h-10 rounded-full bg-green-500/30 flex items-center justify-center">
+                                            <FolderOpen size={20} className="text-green-400" />
+                                        </div>
+                                        <div className="flex-1">
+                                            <h3 className="font-semibold text-white">
+                                                {language === 'fr' ? 'Parcourir...' : 'Browse...'}
+                                            </h3>
+                                            <p className="text-sm text-gray-400">
+                                                {language === 'fr'
+                                                    ? 'Sélectionner manuellement le dossier du catalogue'
+                                                    : 'Manually select the catalog folder'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </button>
+                            </div>
+
+                            {/* Found Catalogs */}
+                            {foundCatalogs.length > 0 && (
+                                <div className="mb-6">
+                                    <h3 className="text-sm font-medium text-gray-300 mb-3">
+                                        {language === 'fr' ? 'Catalogues trouvés:' : 'Found catalogs:'}
+                                    </h3>
+                                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                                        {foundCatalogs.map((catalog, index) => (
+                                            <button
+                                                key={index}
+                                                onClick={() => handleOpenFoundCatalog(catalog)}
+                                                className="w-full p-3 bg-green-500/10 hover:bg-green-500/20 border border-green-500/30 rounded-lg text-left transition-all"
+                                            >
+                                                <p className="text-sm text-green-300 truncate">{catalog}</p>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Error */}
+                            {error && (
+                                <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-300 mb-4">
+                                    {error}
+                                </div>
+                            )}
+
+                            {/* Back button */}
+                            <div className="flex justify-start">
+                                <button
+                                    onClick={() => {
+                                        setCurrentStep('welcome');
+                                        setFoundCatalogs([]);
+                                        setError(null);
+                                    }}
+                                    className="inline-flex items-center gap-2 px-6 py-3 text-gray-400 hover:text-white transition-colors"
+                                >
+                                    <ArrowLeft size={18} />
+                                    {language === 'fr' ? 'Retour' : 'Back'}
+                                </button>
+                            </div>
                         </div>
                     )}
 

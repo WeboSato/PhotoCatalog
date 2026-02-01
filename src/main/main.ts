@@ -1937,3 +1937,50 @@ ipcMain.handle("catalog:selectAndOpen", async () => {
 
     return catalogManagerService.openCatalog(result.filePaths[0]);
 });
+
+// Scan for existing catalogs
+ipcMain.handle("catalog:scan", async () => {
+    const homeDir = require('os').homedir();
+    const foundCatalogs: string[] = [];
+
+    // Common locations to search
+    const searchLocations = [
+        homeDir,
+        path.join(homeDir, 'Documents'),
+        path.join(homeDir, 'Pictures'),
+        path.join(homeDir, 'Desktop'),
+        '/Volumes' // External drives on macOS
+    ];
+
+    const searchForCatalogs = (dir: string, depth: number = 0) => {
+        if (depth > 3) return; // Limit recursion depth
+
+        try {
+            const entries = fs.readdirSync(dir, { withFileTypes: true });
+            for (const entry of entries) {
+                if (entry.name.startsWith('.')) continue; // Skip hidden files
+
+                const fullPath = path.join(dir, entry.name);
+
+                if (entry.isFile() && entry.name === 'catalog.db') {
+                    // Found a catalog - add the parent directory
+                    foundCatalogs.push(dir);
+                } else if (entry.isDirectory() && depth < 3) {
+                    // Skip certain directories
+                    if (['node_modules', 'Library', '.Trash', 'Applications'].includes(entry.name)) continue;
+                    searchForCatalogs(fullPath, depth + 1);
+                }
+            }
+        } catch (e) {
+            // Ignore permission errors
+        }
+    };
+
+    for (const location of searchLocations) {
+        if (fs.existsSync(location)) {
+            searchForCatalogs(location);
+        }
+    }
+
+    return foundCatalogs;
+});

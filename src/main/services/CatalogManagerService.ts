@@ -242,17 +242,38 @@ class CatalogManagerService {
      */
     async openCatalog(catalogPath: string): Promise<{ success: boolean; error?: string }> {
         try {
-            // Find .pcdb file in catalog folder
+            // Find catalog database file (.pcdb or catalog.db)
             const files = fs.readdirSync(catalogPath);
-            const pcdbFile = files.find(f => f.endsWith('.pcdb'));
+            let dbPath: string | null = null;
+            let catalogName: string = path.basename(catalogPath);
+            let previewsPath: string = '';
 
-            if (!pcdbFile) {
-                return { success: false, error: 'No catalog file (.pcdb) found' };
+            // First try .pcdb format
+            const pcdbFile = files.find(f => f.endsWith('.pcdb'));
+            if (pcdbFile) {
+                dbPath = path.join(catalogPath, pcdbFile);
+                catalogName = path.basename(pcdbFile, '.pcdb');
+                previewsPath = path.join(catalogPath, `${catalogName} Previews`);
             }
 
-            const dbPath = path.join(catalogPath, pcdbFile);
-            const catalogName = path.basename(pcdbFile, '.pcdb');
-            const previewsPath = path.join(catalogPath, `${catalogName} Previews`);
+            // Then try catalog.db format
+            if (!dbPath && files.includes('catalog.db')) {
+                dbPath = path.join(catalogPath, 'catalog.db');
+                // Look for thumbnails folder
+                if (files.includes('thumbnails')) {
+                    previewsPath = path.join(catalogPath, 'thumbnails');
+                } else {
+                    // Try to find a Previews folder
+                    const previewsFolder = files.find(f => f.includes('Previews') && fs.statSync(path.join(catalogPath, f)).isDirectory());
+                    if (previewsFolder) {
+                        previewsPath = path.join(catalogPath, previewsFolder);
+                    }
+                }
+            }
+
+            if (!dbPath) {
+                return { success: false, error: 'No catalog file (.pcdb or catalog.db) found' };
+            }
 
             // Verify database exists
             if (!fs.existsSync(dbPath)) {
@@ -263,7 +284,7 @@ class CatalogManagerService {
             settingsService.set('catalogPath', catalogPath);
 
             // Set thumbnail path if previews folder exists
-            if (fs.existsSync(previewsPath)) {
+            if (previewsPath && fs.existsSync(previewsPath)) {
                 settingsService.set('thumbnailPath', previewsPath);
             }
 
@@ -304,13 +325,27 @@ class CatalogManagerService {
     async getCatalogStats(catalogPath: string): Promise<CatalogInfo | null> {
         try {
             const files = fs.readdirSync(catalogPath);
+            let dbPath: string | null = null;
+            let catalogName: string = path.basename(catalogPath);
+            let previewsPath: string = '';
+
+            // First try .pcdb format
             const pcdbFile = files.find(f => f.endsWith('.pcdb'));
+            if (pcdbFile) {
+                dbPath = path.join(catalogPath, pcdbFile);
+                catalogName = path.basename(pcdbFile, '.pcdb');
+                previewsPath = path.join(catalogPath, `${catalogName} Previews`);
+            }
 
-            if (!pcdbFile) return null;
+            // Then try catalog.db format
+            if (!dbPath && files.includes('catalog.db')) {
+                dbPath = path.join(catalogPath, 'catalog.db');
+                if (files.includes('thumbnails')) {
+                    previewsPath = path.join(catalogPath, 'thumbnails');
+                }
+            }
 
-            const dbPath = path.join(catalogPath, pcdbFile);
-            const catalogName = path.basename(pcdbFile, '.pcdb');
-            const previewsPath = path.join(catalogPath, `${catalogName} Previews`);
+            if (!dbPath) return null;
 
             const db = new Database(dbPath, { readonly: true });
             let photoCount = 0;
