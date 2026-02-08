@@ -16,12 +16,11 @@ import {
     Database,
     HardDrive,
     RefreshCw,
-    Users,
     Copy,
     Settings,
     ScanFace,
-    Loader2,
-    Trash2
+    Trash2,
+    X
 } from 'lucide-react';
 import { SettingsModal } from './SettingsModal';
 
@@ -119,19 +118,16 @@ export const Sidebar: React.FC = React.memo(() => {
     const filters = useCatalogStore((s) => s.filters);
 
     const [isRefreshing, setIsRefreshing] = useState(false);
-    const [people, setPeople] = useState<{ id: string; name: string; face_count: number; thumbnail_face_id?: string }[]>([]);
+    const [peopleCount, setPeopleCount] = useState(0);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-    const [isScanning, setIsScanning] = useState(false);
-    const [scanProgress, setScanProgress] = useState<{ current: number; total: number; phase?: string }>({ current: 0, total: 0, phase: '' });
     const [duplicates, setDuplicates] = useState<{ hash: string; photos: any[] }[]>([]);
     const [affinityData, setAffinityData] = useState<{ grouped: Record<string, Record<string, Record<string, any[]>>>; total: number } | null>(null);
     const [expandedYears, setExpandedYears] = useState<Set<string>>(new Set());
     const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set());
-    const [activePersonId, setActivePersonId] = useState<string | null>(null);
 
-    // Load people and affinity data on mount
+    // Load people count and affinity data on mount
     useEffect(() => {
-        window.api.getPeople().then(setPeople);
+        window.api.getPeople().then(people => setPeopleCount(people.length));
         window.api.findDuplicates().then(setDuplicates);
         window.api.getAffinityByDate().then(setAffinityData);
     }, []);
@@ -145,85 +141,6 @@ export const Sidebar: React.FC = React.memo(() => {
     }, []);
 
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-    // Face scanning function
-    const scanFaces = async () => {
-        if (isScanning) return;
-
-        setIsScanning(true);
-        setScanProgress({ current: 0, total: 0, phase: 'scanning' });
-
-        try {
-            // Import FaceRecognitionService dynamically
-            const { faceRecognitionService } = await import('../services/FaceRecognitionService');
-
-            // Load models first
-            await faceRecognitionService.loadModels();
-
-            // Get all photos
-            const photos = await window.api.getPhotos(10000, 0);
-            setScanProgress({ current: 0, total: photos.length, phase: 'scanning' });
-
-            let facesFound = 0;
-
-            for (let i = 0; i < photos.length; i++) {
-                const photo = photos[i];
-                setScanProgress({ current: i + 1, total: photos.length, phase: 'scanning' });
-
-                // Skip if no thumbnail
-                if (!photo.thumbnail_path) continue;
-
-                try {
-                    // Use thumbnail for faster processing
-                    const imageUrl = `local-image://${photo.thumbnail_path}`;
-                    const faces = await faceRecognitionService.detectFacesFromUrl(imageUrl);
-
-                    // Save detected faces to database
-                    for (const face of faces) {
-                        await window.api.insertFace({
-                            id: face.id,
-                            photo_id: photo.id,
-                            box_x: face.box.x,
-                            box_y: face.box.y,
-                            box_width: face.box.width,
-                            box_height: face.box.height,
-                            descriptor: face.descriptor ? JSON.stringify(Array.from(face.descriptor)) : null,
-                            confidence: face.confidence
-                        });
-                        facesFound++;
-                    }
-                } catch (err) {
-                    // Skip photos that fail
-                    console.warn(`[FaceScan] Failed to process ${photo.file_name}:`, err);
-                }
-
-                // Small delay to keep UI responsive
-                if (i % 10 === 0) {
-                    await new Promise(r => setTimeout(r, 10));
-                }
-            }
-
-            console.log(`[FaceScan] Complete! Found ${facesFound} faces in ${photos.length} photos`);
-
-            // Now cluster the faces automatically
-            setScanProgress({ current: 0, total: 0, phase: 'clustering' });
-            console.log('[FaceScan] Starting face clustering...');
-
-            const clusterResult = await window.api.clusterFaces();
-            console.log(`[FaceScan] Clustering done: ${clusterResult.clustersCreated} people, ${clusterResult.facesAssigned} faces`);
-
-            // Refresh people list
-            const updatedPeople = await window.api.getPeople();
-            setPeople(updatedPeople);
-
-        } catch (error) {
-            console.error('[FaceScan] Error:', error);
-            alert('Error during scan: ' + (error as Error).message);
-        } finally {
-            setIsScanning(false);
-            setScanProgress({ current: 0, total: 0, phase: '' });
-        }
-    };
 
     const toggleYear = (year: string) => {
         setExpandedYears(prev => {
@@ -463,14 +380,42 @@ export const Sidebar: React.FC = React.memo(() => {
                         <p className="px-3 py-2 text-xs text-gray-500">{t('noCollectionsYet')}</p>
                     ) : (
                         collections.map((collection) => (
-                            <SidebarItem
+                            <div
                                 key={collection.id}
-                                icon={<LayoutGrid size={14} />}
-                                label={collection.name}
-                                count={collection.photo_count}
-                                isActive={activeCollectionId === collection.id}
-                                onClick={() => getStore().setActiveCollectionId(collection.id)}
-                            />
+                                className="group flex items-center"
+                            >
+                                <button
+                                    onClick={() => getStore().setActiveCollectionId(collection.id)}
+                                    className={`flex-1 flex items-center justify-between px-3 py-1.5 text-sm rounded-l transition-colors
+                                        ${activeCollectionId === collection.id ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white'}`}
+                                >
+                                    <div className="flex items-center gap-2 truncate">
+                                        <LayoutGrid size={14} />
+                                        <span className="truncate">{collection.name}</span>
+                                    </div>
+                                    <span className={`text-xs ${activeCollectionId === collection.id ? 'text-blue-200' : 'text-gray-500'}`}>
+                                        {collection.photo_count}
+                                    </span>
+                                </button>
+                                <button
+                                    onClick={async (e) => {
+                                        e.stopPropagation();
+                                        if (confirm(`Delete collection "${collection.name}"?`)) {
+                                            await window.api.deleteCollection(collection.id);
+                                            const updatedCollections = await window.api.getCollections();
+                                            getStore().setCollections(updatedCollections);
+                                            if (activeCollectionId === collection.id) {
+                                                getStore().setActiveCollectionId(null);
+                                            }
+                                        }
+                                    }}
+                                    className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-gray-800 rounded-r
+                                               opacity-0 group-hover:opacity-100 transition-opacity"
+                                    title="Delete collection"
+                                >
+                                    <Trash2 size={12} />
+                                </button>
+                            </div>
                         ))
                     )}
                 </SidebarSection>
@@ -494,109 +439,24 @@ export const Sidebar: React.FC = React.memo(() => {
                     )}
                 </SidebarSection>
 
-                {/* People */}
-                <SidebarSection
-                    title={t('people')}
-                    icon={<Users size={16} />}
-                    defaultOpen={false}
-                    action={
-                        <div className="flex items-center gap-1">
-                            <button
-                                onClick={scanFaces}
-                                disabled={isScanning}
-                                className="p-1 text-gray-500 hover:text-blue-400 rounded disabled:opacity-50"
-                                title={t('scanFaces')}
-                            >
-                                {isScanning ? (
-                                    <Loader2 size={14} className="animate-spin" />
-                                ) : (
-                                    <ScanFace size={14} />
-                                )}
-                            </button>
-                            <button
-                                onClick={async () => {
-                                    const name = prompt(t('personName') + ':');
-                                    if (name) {
-                                        await window.api.createPerson(name);
-                                        const updatedPeople = await window.api.getPeople();
-                                        setPeople(updatedPeople);
-                                    }
-                                }}
-                                className="p-1 text-gray-500 hover:text-white rounded"
-                                title={t('addPerson')}
-                            >
-                                <Plus size={14} />
-                            </button>
-                            {people.length > 0 && (
-                                <button
-                                    onClick={async () => {
-                                        if (confirm(t('clearAllFacesConfirm'))) {
-                                            await window.api.clearAllFaces();
-                                            setPeople([]);
-                                            setActivePersonId(null);
-                                        }
-                                    }}
-                                    disabled={isScanning}
-                                    className="p-1 text-gray-500 hover:text-red-400 rounded disabled:opacity-50"
-                                    title={t('clearAllFaces')}
-                                >
-                                    <Trash2 size={14} />
-                                </button>
-                            )}
+                {/* AIFACE - People Recognition */}
+                <div className="mb-2">
+                    <button
+                        onClick={() => {
+                            getStore().setViewMode('aiface');
+                        }}
+                        className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium
+                                   text-gray-300 hover:text-white hover:bg-gray-800 rounded transition-colors"
+                    >
+                        <div className="flex items-center gap-2">
+                            <ScanFace size={16} className="text-blue-400" />
+                            <span>AIFACE</span>
                         </div>
-                    }
-                >
-                    {isScanning && (
-                        <div className="px-3 py-2 text-xs text-blue-400">
-                            {scanProgress.phase === 'clustering' ? (
-                                <span className="flex items-center gap-2">
-                                    <Loader2 size={12} className="animate-spin" />
-                                    {t('groupingSimilarFaces')}
-                                </span>
-                            ) : (
-                                <span>{t('scanning')} {scanProgress.current}/{scanProgress.total}</span>
-                            )}
-                        </div>
-                    )}
-                    {!isScanning && people.length === 0 ? (
-                        <p className="px-3 py-2 text-xs text-gray-500">
-                            {t('noPeopleYet')} <ScanFace size={12} className="inline" />
-                        </p>
-                    ) : (
-                        people.map((person) => (
-                            <button
-                                key={person.id}
-                                onClick={async () => {
-                                    // Set active state to show this person's photos
-                                    setActivePersonId(person.id);
-                                    getStore().setActiveCollectionId(null);
-                                    getStore().setActiveFolderId(null);
-                                    getStore().setFilters({});
-                                    const photos = await window.api.getPhotosByPerson(person.id);
-                                    getStore().setPhotos(photos);
-                                }}
-                                onDoubleClick={async () => {
-                                    const newName = prompt('Rename:', person.name);
-                                    if (newName && newName !== person.name) {
-                                        await window.api.updatePerson(person.id, newName);
-                                        const updatedPeople = await window.api.getPeople();
-                                        setPeople(updatedPeople);
-                                    }
-                                }}
-                                className={`w-full flex items-center justify-between px-3 py-1.5 text-sm rounded transition-colors
-                                    ${activePersonId === person.id ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white'}`}
-                            >
-                                <div className="flex items-center gap-2 truncate">
-                                    <Users size={14} />
-                                    <span className="truncate">{person.name}</span>
-                                </div>
-                                <span className={`text-xs ${activePersonId === person.id ? 'text-blue-200' : 'text-gray-500'}`}>
-                                    {person.face_count}
-                                </span>
-                            </button>
-                        ))
-                    )}
-                </SidebarSection>
+                        {peopleCount > 0 && (
+                            <span className="text-xs text-gray-500">{peopleCount}</span>
+                        )}
+                    </button>
+                </div>
 
                 {/* Duplicates */}
                 {duplicates.length > 0 && (

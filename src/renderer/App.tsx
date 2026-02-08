@@ -16,6 +16,7 @@ import './styles/globals.css';
 // Lazy load heavy components
 const MapView = lazy(() => import('./components/MapView'));
 const DevelopView = lazy(() => import('./components/DevelopView'));
+const AIFaceView = lazy(() => import('./components/AIFaceView'));
 
 // Get store actions once - they're stable and don't need subscriptions
 const getStoreActions = () => useCatalogStore.getState();
@@ -223,7 +224,21 @@ const App: React.FC = () => {
     // Keyboard shortcuts - use getState() to avoid re-renders
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+            // Skip shortcuts when typing in any input field
+            // Use multiple detection methods for robustness
+            const target = e.target as HTMLElement;
+            const activeEl = document.activeElement as HTMLElement | null;
+            const tagName = target?.tagName?.toLowerCase();
+            const activeTagName = activeEl?.tagName?.toLowerCase();
+
+            // Check if target or active element is an input, textarea, or contenteditable
+            const isInputTarget = tagName === 'input' || tagName === 'textarea' || target?.isContentEditable;
+            const isInputActive = activeTagName === 'input' || activeTagName === 'textarea' || activeEl?.isContentEditable;
+
+            // Also check for elements with role="textbox" or any focusable text input
+            const hasTextboxRole = target?.getAttribute?.('role') === 'textbox' || activeEl?.getAttribute?.('role') === 'textbox';
+
+            if (isInputTarget || isInputActive || hasTextboxRole) {
                 return;
             }
 
@@ -244,6 +259,9 @@ const App: React.FC = () => {
                     break;
                 case 'd':
                     if (!e.metaKey && !e.ctrlKey) setViewMode('develop');
+                    break;
+                case 'f':
+                    if (!e.metaKey && !e.ctrlKey) setViewMode('aiface');
                     break;
                 case 'p':
                     if (!e.metaKey && !e.ctrlKey && selectedPhotoIds.size > 0) {
@@ -370,6 +388,11 @@ const App: React.FC = () => {
                             {viewMode === 'develop' && (
                                 <Suspense fallback={<div className="flex-1 flex items-center justify-center text-gray-500">Loading develop module...</div>}>
                                     <DevelopView />
+                                </Suspense>
+                            )}
+                            {viewMode === 'aiface' && (
+                                <Suspense fallback={<div className="flex-1 flex items-center justify-center text-gray-500">Loading AIFACE...</div>}>
+                                    <AIFaceView />
                                 </Suspense>
                             )}
                         </div>

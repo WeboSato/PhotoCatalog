@@ -20,6 +20,11 @@ export interface FaceMatch {
     confidence: number;
 }
 
+// Minimum confidence threshold for face detection (0.0 to 1.0)
+// Higher values = fewer false positives (logos, patterns, etc.)
+// 0.5 is a good balance, 0.6+ for stricter detection
+const MIN_FACE_CONFIDENCE = 0.5;
+
 class FaceRecognitionService {
     private modelsLoaded = false;
     private labeledDescriptors: Map<string, faceapi.LabeledFaceDescriptors> = new Map();
@@ -54,8 +59,13 @@ class FaceRecognitionService {
         }
 
         try {
+            // Use minConfidence to filter out false positives (logos, patterns, etc.)
+            const detectionOptions = new faceapi.SsdMobilenetv1Options({
+                minConfidence: MIN_FACE_CONFIDENCE
+            });
+
             const detections = await faceapi
-                .detectAllFaces(imageElement)
+                .detectAllFaces(imageElement, detectionOptions)
                 .withFaceLandmarks()
                 .withFaceDescriptors();
 

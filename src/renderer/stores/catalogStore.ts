@@ -63,7 +63,7 @@ export interface FilterCriteria {
     search_text?: string;
 }
 
-export type ViewMode = 'grid' | 'loupe' | 'survey' | 'map' | 'develop';
+export type ViewMode = 'grid' | 'loupe' | 'survey' | 'map' | 'develop' | 'aiface';
 export type SortBy = 'date_taken' | 'date_imported' | 'file_name' | 'rating';
 export type SortOrder = 'asc' | 'desc';
 

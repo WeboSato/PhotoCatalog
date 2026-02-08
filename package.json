@@ -54,6 +54,7 @@
         "wait-on": "^8.0.1"
     },
     "dependencies": {
+        "@huggingface/transformers": "^3.8.1",
         "@tanstack/react-virtual": "^3.13.13",
         "@types/leaflet": "^1.9.21",
         "@types/react": "^18.3.18",

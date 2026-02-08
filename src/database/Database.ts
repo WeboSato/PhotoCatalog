@@ -305,9 +305,28 @@ class CatalogDatabase {
         }
 
         if (criteria.search_text) {
-            conditions.push('(file_name LIKE ? OR title LIKE ? OR caption LIKE ?)');
+            // Search in file_name, title, caption, AND keywords
+            conditions.push(`(
+                file_name LIKE ? OR title LIKE ? OR caption LIKE ? OR
+                photos.id IN (
+                    SELECT pk.photo_id FROM photo_keywords pk
+                    JOIN keywords k ON pk.keyword_id = k.id
+                    WHERE k.name LIKE ?
+                )
+            )`);
             const searchPattern = `%${criteria.search_text}%`;
-            params.push(searchPattern, searchPattern, searchPattern);
+            params.push(searchPattern, searchPattern, searchPattern, searchPattern);
+        }
+
+        // Filter by specific keywords
+        if (criteria.keywords && criteria.keywords.length > 0) {
+            const keywordPlaceholders = criteria.keywords.map(() => '?').join(',');
+            conditions.push(`photos.id IN (
+                SELECT pk.photo_id FROM photo_keywords pk
+                JOIN keywords k ON pk.keyword_id = k.id
+                WHERE k.name IN (${keywordPlaceholders})
+            )`);
+            params.push(...criteria.keywords);
         }
 
         params.push(limit, offset);
@@ -419,6 +438,23 @@ class CatalogDatabase {
             GROUP BY k.id
             ORDER BY k.name
         `).all() as Keyword[];
+    }
+
+    getOrCreateKeywordByName(name: string): string {
+        const existing = this.getDb().prepare(`
+            SELECT id FROM keywords WHERE LOWER(name) = LOWER(?)
+        `).get(name) as { id: string } | undefined;
+
+        if (existing) {
+            return existing.id;
+        }
+
+        return this.createKeyword({ name: name.toLowerCase() });
+    }
+
+    addKeywordsByNameToPhoto(photoId: string, keywordNames: string[]): void {
+        const keywordIds = keywordNames.map(name => this.getOrCreateKeywordByName(name));
+        this.addKeywordsToPhoto(photoId, keywordIds);
     }
 
     addKeywordsToPhoto(photoId: string, keywordIds: string[]): void {
@@ -830,7 +866,7 @@ class CatalogDatabase {
         `).all() as any[];
     }
 
-    getPerson(id: string): { id: string; name: string; face_count: number } | undefined {
+    getPerson(id: string): { id: string; name: string; face_count: number; thumbnail_face_id?: string } | undefined {
         return this.getDb().prepare(`
             SELECT p.*, COUNT(f.id) as face_count
             FROM people p
@@ -1017,6 +1053,64 @@ class CatalogDatabase {
             JOIN photos p ON f.photo_id = p.id
             WHERE f.id = ?
         `).get(faceId);
+    }
+
+    // Get person with their thumbnail face data
+    getPersonWithThumbnailFace(personId: string): any {
+        const person = this.getPerson(personId);
+        if (!person) return null;
+
+        let faceData = null;
+
+        // If person has a thumbnail_face_id, get that face
+        if (person.thumbnail_face_id) {
+            faceData = this.getFaceWithPhoto(person.thumbnail_face_id);
+        }
+
+        // If no thumbnail_face_id or face not found, get the first face for this person
+        if (!faceData) {
+            faceData = this.getDb().prepare(`
+                SELECT f.*, p.file_path, p.thumbnail_path
+                FROM faces f
+                JOIN photos p ON f.photo_id = p.id
+                WHERE f.person_id = ?
+                ORDER BY f.confidence DESC
+                LIMIT 1
+            `).get(personId);
+        }
+
+        return {
+            ...person,
+            face: faceData
+        };
+    }
+
+    // Get all people with their thumbnail face data
+    getPeopleWithThumbnails(): any[] {
+        const people = this.getPeople();
+        return people.map(person => {
+            let faceData = null;
+
+            if (person.thumbnail_face_id) {
+                faceData = this.getFaceWithPhoto(person.thumbnail_face_id);
+            }
+
+            if (!faceData) {
+                faceData = this.getDb().prepare(`
+                    SELECT f.*, p.file_path, p.thumbnail_path
+                    FROM faces f
+                    JOIN photos p ON f.photo_id = p.id
+                    WHERE f.person_id = ?
+                    ORDER BY f.confidence DESC
+                    LIMIT 1
+                `).get(person.id);
+            }
+
+            return {
+                ...person,
+                face: faceData
+            };
+        });
     }
 
     close(): void {

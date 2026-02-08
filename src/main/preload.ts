@@ -36,6 +36,7 @@ contextBridge.exposeInMainWorld('api', {
     getPhotoKeywords: (photoId: string) => ipcRenderer.invoke('keywords:getForPhoto', photoId),
     addKeywordsToPhoto: (photoId: string, keywordIds: string[]) => ipcRenderer.invoke('keywords:addToPhoto', photoId, keywordIds),
     removeKeywordsFromPhoto: (photoId: string, keywordIds: string[]) => ipcRenderer.invoke('keywords:removeFromPhoto', photoId, keywordIds),
+    addKeywordsByName: (photoId: string, keywordNames: string[]) => ipcRenderer.invoke('keywords:addByName', photoId, keywordNames),
 
     // Folder operations
     getFolders: () => ipcRenderer.invoke('folders:getAll'),
@@ -185,6 +186,8 @@ contextBridge.exposeInMainWorld('api', {
     getFaceStats: () => ipcRenderer.invoke('faces:getStats'),
     clearAllFaces: () => ipcRenderer.invoke('faces:clearAll'),
     getFaceWithPhoto: (faceId: string) => ipcRenderer.invoke('faces:getWithPhoto', faceId),
+    getPersonWithThumbnail: (personId: string) => ipcRenderer.invoke('people:getWithThumbnail', personId),
+    getPeopleWithThumbnails: () => ipcRenderer.invoke('people:getAllWithThumbnails'),
 
     // Duplicate detection
     findDuplicates: () => ipcRenderer.invoke('duplicates:find'),
@@ -261,6 +264,7 @@ export interface ElectronAPI {
     getPhotoKeywords: (photoId: string) => Promise<any[]>;
     addKeywordsToPhoto: (photoId: string, keywordIds: string[]) => Promise<boolean>;
     removeKeywordsFromPhoto: (photoId: string, keywordIds: string[]) => Promise<boolean>;
+    addKeywordsByName: (photoId: string, keywordNames: string[]) => Promise<boolean>;
 
     getFolders: () => Promise<any[]>;
     getFolderHierarchy: () => Promise<any[]>;
@@ -337,6 +341,8 @@ export interface ElectronAPI {
     getFaceStats: () => Promise<{ total: number; unassigned: number }>;
     clearAllFaces: () => Promise<boolean>;
     getFaceWithPhoto: (faceId: string) => Promise<any>;
+    getPersonWithThumbnail: (personId: string) => Promise<any>;
+    getPeopleWithThumbnails: () => Promise<any[]>;
 
     // Duplicate detection
     findDuplicates: () => Promise<{ hash: string; photos: any[] }[]>;

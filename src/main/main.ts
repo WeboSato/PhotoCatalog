@@ -915,6 +915,12 @@ ipcMain.handle('keywords:removeFromPhoto', (_, photoId: string, keywordIds: stri
     return true;
 });
 
+// AI Keywords - add keywords by name (creates if not exists)
+ipcMain.handle('keywords:addByName', (_, photoId: string, keywordNames: string[]) => {
+    catalogDb.addKeywordsByNameToPhoto(photoId, keywordNames);
+    return true;
+});
+
 // Folder operations
 ipcMain.handle('folders:getAll', () => {
     return catalogDb.getFolders();
@@ -1670,6 +1676,16 @@ ipcMain.handle('faces:clearAll', () => {
 // Get face with photo info
 ipcMain.handle('faces:getWithPhoto', (_, faceId: string) => {
     return catalogDb.getFaceWithPhoto(faceId);
+});
+
+// Get person with thumbnail face data
+ipcMain.handle('people:getWithThumbnail', (_, personId: string) => {
+    return catalogDb.getPersonWithThumbnailFace(personId);
+});
+
+// Get all people with thumbnail face data
+ipcMain.handle('people:getAllWithThumbnails', () => {
+    return catalogDb.getPeopleWithThumbnails();
 });
 
 // Duplicate detection
