@@ -652,6 +652,53 @@ app.whenReady().then(async () => {
             mainWindow?.webContents.send('thumbnails:progress', { current: 0, total: 0, done: true });
             mainWindow?.webContents.send('photos:refresh');
         }
+
+        // Auto AI tagging for photos without keywords (background, low priority)
+        try {
+            const { initializeAI, analyzeImage } = await import('./services/AITaggingService');
+            const aiReady = await initializeAI();
+            if (aiReady) {
+                const allPhotos = catalogDb.getAllPhotos(999999, 0);
+                const photosToTag = allPhotos.filter(p => {
+                    if (!p.thumbnail_path && !p.file_path) return false;
+                    const keywords = catalogDb.getPhotoKeywords(p.id);
+                    return keywords.length === 0;
+                });
+
+                if (photosToTag.length > 0) {
+                    console.log(`[AI Auto-Tag] Found ${photosToTag.length} photos without keywords, tagging...`);
+                    let tagged = 0;
+
+                    for (const photo of photosToTag) {
+                        try {
+                            const imagePath = photo.thumbnail_path || photo.file_path;
+                            const keywords = await analyzeImage(imagePath);
+                            if (keywords.length > 0) {
+                                catalogDb.addKeywordsByNameToPhoto(photo.id, keywords);
+                                tagged++;
+                            }
+                        } catch {
+                            // Skip photos that fail
+                        }
+
+                        // Small delay to keep app responsive
+                        if (tagged % 10 === 0) {
+                            await new Promise(r => setTimeout(r, 100));
+                        }
+
+                        // Log progress every 50 photos
+                        if (tagged % 50 === 0 && tagged > 0) {
+                            console.log(`[AI Auto-Tag] Progress: ${tagged}/${photosToTag.length}`);
+                        }
+                    }
+
+                    console.log(`[AI Auto-Tag] Complete: tagged ${tagged}/${photosToTag.length} photos`);
+                    mainWindow?.webContents.send('photos:refresh');
+                }
+            }
+        } catch (aiError) {
+            console.warn('[AI Auto-Tag] Auto-tagging skipped:', aiError);
+        }
     }, 3000);
 
     // Watch for SD card / external drive insertions
@@ -835,6 +882,92 @@ ipcMain.handle('photos:getAffinityByDate', () => {
     return { grouped, total: photos.length };
 });
 
+// Copy photos to a target folder
+ipcMain.handle('photos:copy', async (_, ids: string[], targetFolder: string) => {
+    const results = { success: 0, failed: 0, errors: [] as string[] };
+
+    for (const id of ids) {
+        const photo = catalogDb.getPhoto(id);
+        if (!photo || !photo.file_path) {
+            results.failed++;
+            continue;
+        }
+
+        try {
+            const fileName = path.basename(photo.file_path);
+            let destPath = path.join(targetFolder, fileName);
+
+            // Handle name collisions
+            if (fs.existsSync(destPath)) {
+                const ext = path.extname(fileName);
+                const base = path.basename(fileName, ext);
+                let counter = 1;
+                while (fs.existsSync(destPath)) {
+                    destPath = path.join(targetFolder, `${base}_${counter}${ext}`);
+                    counter++;
+                }
+            }
+
+            fs.copyFileSync(photo.file_path, destPath);
+            results.success++;
+        } catch (error: any) {
+            results.failed++;
+            results.errors.push(`${photo.file_name}: ${error.message}`);
+        }
+    }
+
+    return results;
+});
+
+// Move photos to a target folder (updates file paths in DB)
+ipcMain.handle('photos:move', async (_, ids: string[], targetFolder: string) => {
+    const results = { success: 0, failed: 0, errors: [] as string[] };
+
+    for (const id of ids) {
+        const photo = catalogDb.getPhoto(id);
+        if (!photo || !photo.file_path) {
+            results.failed++;
+            continue;
+        }
+
+        try {
+            const fileName = path.basename(photo.file_path);
+            let destPath = path.join(targetFolder, fileName);
+
+            // Handle name collisions
+            if (fs.existsSync(destPath)) {
+                const ext = path.extname(fileName);
+                const base = path.basename(fileName, ext);
+                let counter = 1;
+                while (fs.existsSync(destPath)) {
+                    destPath = path.join(targetFolder, `${base}_${counter}${ext}`);
+                    counter++;
+                }
+            }
+
+            fs.renameSync(photo.file_path, destPath);
+
+            // Update file path in database
+            catalogDb.updatePhoto(id, { file_path: destPath } as any);
+            results.success++;
+        } catch (error: any) {
+            results.failed++;
+            results.errors.push(`${photo.file_name}: ${error.message}`);
+        }
+    }
+
+    return results;
+});
+
+// Select a target folder for copy/move operations
+ipcMain.handle('photos:selectTargetFolder', async () => {
+    const result = await dialog.showOpenDialog(mainWindow!, {
+        properties: ['openDirectory', 'createDirectory'],
+        title: 'Select destination folder'
+    });
+    return result.filePaths[0] || null;
+});
+
 // Rotation - updates orientation in database (EXIF orientation values 1-8)
 // Clockwise: 1->6->3->8->1, Counter-clockwise: 1->8->3->6->1
 ipcMain.handle('photos:rotate', (_, ids: string[], direction: 'cw' | 'ccw') => {
@@ -919,6 +1052,34 @@ ipcMain.handle('keywords:removeFromPhoto', (_, photoId: string, keywordIds: stri
 ipcMain.handle('keywords:addByName', (_, photoId: string, keywordNames: string[]) => {
     catalogDb.addKeywordsByNameToPhoto(photoId, keywordNames);
     return true;
+});
+
+// AI Tagging
+ipcMain.handle('ai:analyze', async (_, photoId: string) => {
+    const { analyzeImage } = await import('./services/AITaggingService');
+    const photo = catalogDb.getPhoto(photoId);
+    if (!photo) throw new Error('Photo not found');
+
+    // Use thumbnail if available, otherwise original
+    const imagePath = photo.thumbnail_path || photo.file_path;
+    const keywords = await analyzeImage(imagePath);
+
+    // Save keywords to database
+    if (keywords.length > 0) {
+        catalogDb.addKeywordsByNameToPhoto(photoId, keywords);
+    }
+
+    return keywords;
+});
+
+ipcMain.handle('ai:init', async () => {
+    const { initializeAI } = await import('./services/AITaggingService');
+    return await initializeAI();
+});
+
+ipcMain.handle('ai:isReady', async () => {
+    const { isAIReady } = await import('./services/AITaggingService');
+    return isAIReady();
 });
 
 // Folder operations

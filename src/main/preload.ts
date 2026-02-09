@@ -20,6 +20,9 @@ contextBridge.exposeInMainWorld('api', {
     bulkUpdateColorLabel: (ids: string[], colorLabel: string) => ipcRenderer.invoke('photos:bulkUpdateColorLabel', ids, colorLabel),
     getAffinityByDate: () => ipcRenderer.invoke('photos:getAffinityByDate'),
     rotatePhotos: (ids: string[], direction: 'cw' | 'ccw') => ipcRenderer.invoke('photos:rotate', ids, direction),
+    copyPhotos: (ids: string[], targetFolder: string) => ipcRenderer.invoke('photos:copy', ids, targetFolder),
+    movePhotos: (ids: string[], targetFolder: string) => ipcRenderer.invoke('photos:move', ids, targetFolder),
+    selectTargetFolder: () => ipcRenderer.invoke('photos:selectTargetFolder'),
 
     // Collection operations
     getCollections: () => ipcRenderer.invoke('collections:getAll'),
@@ -37,6 +40,11 @@ contextBridge.exposeInMainWorld('api', {
     addKeywordsToPhoto: (photoId: string, keywordIds: string[]) => ipcRenderer.invoke('keywords:addToPhoto', photoId, keywordIds),
     removeKeywordsFromPhoto: (photoId: string, keywordIds: string[]) => ipcRenderer.invoke('keywords:removeFromPhoto', photoId, keywordIds),
     addKeywordsByName: (photoId: string, keywordNames: string[]) => ipcRenderer.invoke('keywords:addByName', photoId, keywordNames),
+
+    // AI Tagging (runs in main process)
+    aiAnalyze: (photoId: string) => ipcRenderer.invoke('ai:analyze', photoId),
+    aiInit: () => ipcRenderer.invoke('ai:init'),
+    aiIsReady: () => ipcRenderer.invoke('ai:isReady'),
 
     // Folder operations
     getFolders: () => ipcRenderer.invoke('folders:getAll'),
@@ -250,6 +258,9 @@ export interface ElectronAPI {
     bulkUpdateColorLabel: (ids: string[], colorLabel: string) => Promise<boolean>;
     getAffinityByDate: () => Promise<{ grouped: Record<string, Record<string, Record<string, any[]>>>; total: number }>;
     rotatePhotos: (ids: string[], direction: 'cw' | 'ccw') => Promise<boolean>;
+    copyPhotos: (ids: string[], targetFolder: string) => Promise<{ success: number; failed: number; errors: string[] }>;
+    movePhotos: (ids: string[], targetFolder: string) => Promise<{ success: number; failed: number; errors: string[] }>;
+    selectTargetFolder: () => Promise<string | null>;
 
     getCollections: () => Promise<any[]>;
     createCollection: (collection: any) => Promise<string>;
@@ -265,6 +276,10 @@ export interface ElectronAPI {
     addKeywordsToPhoto: (photoId: string, keywordIds: string[]) => Promise<boolean>;
     removeKeywordsFromPhoto: (photoId: string, keywordIds: string[]) => Promise<boolean>;
     addKeywordsByName: (photoId: string, keywordNames: string[]) => Promise<boolean>;
+
+    aiAnalyze: (photoId: string) => Promise<string[]>;
+    aiInit: () => Promise<boolean>;
+    aiIsReady: () => Promise<boolean>;
 
     getFolders: () => Promise<any[]>;
     getFolderHierarchy: () => Promise<any[]>;

@@ -7,11 +7,12 @@ import { execSync } from 'child_process';
 import { RAW_EXTENSIONS } from '../database/schema';
 
 // Safe logging to prevent EPIPE errors when console pipe is closed
+const timestamp = () => new Date().toISOString();
 const safeLog = (message: string, ...args: any[]) => {
-    try { console.log(message, ...args); } catch {}
+    try { console.log(`[${timestamp()}] ${message}`, ...args); } catch {}
 };
 const safeError = (message: string, ...args: any[]) => {
-    try { console.error(message, ...args); } catch {}
+    try { console.error(`[${timestamp()}] ${message}`, ...args); } catch {}
 };
 
 export interface ThumbnailOptions {
@@ -102,16 +103,22 @@ class ThumbnailService {
             const thumbnailPath = path.join(this.thumbnailDir, `${hashedPath}.webp`);
             const previewPath = path.join(this.previewDir, `${hashedPath}.webp`);
 
-            // Check if thumbnails already exist
-            if (!forceRegenerate && fs.existsSync(thumbnailPath)) {
-                // Get dimensions from existing thumbnail
-                const metadata = await sharp(thumbnailPath).metadata();
-                return {
-                    thumbnailPath,
-                    previewPath: fs.existsSync(previewPath) ? previewPath : thumbnailPath,
-                    width: metadata.width || 0,
-                    height: metadata.height || 0
-                };
+            // Check if thumbnails already exist (parallel file checks)
+            if (!forceRegenerate) {
+                const [thumbExists, previewExists] = await Promise.all([
+                    fs.promises.access(thumbnailPath, fs.constants.F_OK).then(() => true).catch(() => false),
+                    fs.promises.access(previewPath, fs.constants.F_OK).then(() => true).catch(() => false)
+                ]);
+
+                if (thumbExists) {
+                    const metadata = await sharp(thumbnailPath).metadata();
+                    return {
+                        thumbnailPath,
+                        previewPath: previewExists ? previewPath : thumbnailPath,
+                        width: metadata.width || 0,
+                        height: metadata.height || 0
+                    };
+                }
             }
 
             // Ensure thumbnail directory exists
@@ -322,6 +329,11 @@ class ThumbnailService {
                 imageBuffer = await image.toBuffer();
             }
 
+            // Verify buffer is valid before processing
+            if (!imageBuffer || imageBuffer.length === 0) {
+                throw new Error(`Empty image buffer generated for: ${sourcePath}`);
+            }
+
             // Generate thumbnail (medium size)
             await sharp(imageBuffer)
                 .rotate() // Auto-rotate based on EXIF orientation
@@ -351,8 +363,12 @@ class ThumbnailService {
                 height: originalHeight
             };
 
-        } catch (error) {
-            safeError(`[ThumbnailService] Error generating thumbnails for ${sourcePath}:`, error);
+        } catch (error: any) {
+            safeError(`[ThumbnailService] Error generating thumbnails`, {
+                sourcePath,
+                error: error?.message || error,
+                stack: error?.stack
+            });
             return null;
         }
     }
@@ -377,17 +393,33 @@ class ThumbnailService {
         const results = new Map<string, ThumbnailResult | null>();
         const total = filePaths.length;
 
-        // Process in batches for better performance
-        const batchSize = 5;
+        // Adaptive batch size: scale with total count, min 3, max 10
+        const batchSize = Math.min(10, Math.max(3, Math.floor(total / 20)));
+        safeLog(`[ThumbnailService] Bulk processing ${total} files, batch size: ${batchSize}`);
+
         for (let i = 0; i < total; i += batchSize) {
             const batch = filePaths.slice(i, i + batchSize);
-            const promises = batch.map(async (filePath) => {
-                const result = await this.generateThumbnails(filePath);
-                results.set(filePath, result);
-                return { filePath, result };
-            });
 
-            await Promise.all(promises);
+            try {
+                const promises = batch.map(async (filePath) => {
+                    const result = await this.generateThumbnails(filePath);
+                    results.set(filePath, result);
+                    return { filePath, result };
+                });
+
+                await Promise.all(promises);
+            } catch (batchError: any) {
+                safeError(`[ThumbnailService] Batch failed at index ${i}`, {
+                    error: batchError?.message || batchError,
+                    batchFiles: batch
+                });
+                // Mark failed files as null and continue
+                for (const filePath of batch) {
+                    if (!results.has(filePath)) {
+                        results.set(filePath, null);
+                    }
+                }
+            }
 
             if (onProgress) {
                 const completed = Math.min(i + batchSize, total);
@@ -395,6 +427,7 @@ class ThumbnailService {
             }
         }
 
+        safeLog(`[ThumbnailService] Bulk processing complete: ${results.size}/${total} processed`);
         return results;
     }
 

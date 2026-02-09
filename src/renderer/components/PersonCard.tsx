@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { User } from 'lucide-react';
 
 export interface PersonWithThumbnail {
@@ -22,16 +22,27 @@ export interface PersonWithThumbnail {
 interface PersonCardProps {
     person: PersonWithThumbnail;
     onClick: () => void;
+    onRename?: (person: PersonWithThumbnail, newName: string) => void;
     isActive?: boolean;
 }
 
 export const PersonCard: React.FC<PersonCardProps> = ({
     person,
     onClick,
+    onRename,
     isActive = false
 }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [editName, setEditName] = useState(person.name);
+    const [imgStyle, setImgStyle] = useState<React.CSSProperties>({
+        position: 'absolute',
+        width: '100%',
+        height: '100%',
+        objectFit: 'cover' as const,
+        opacity: 0,
+    });
+    const [imgError, setImgError] = useState(false);
+    const containerRef = useRef<HTMLDivElement>(null);
 
     // Get the image URL for the face thumbnail
     const getImageUrl = () => {
@@ -46,37 +57,79 @@ export const PersonCard: React.FC<PersonCardProps> = ({
 
     const imageUrl = getImageUrl();
 
-    // Calculate cropping styles to center face in thumbnail
-    const getCropStyles = (): React.CSSProperties => {
-        if (!person.face) return {};
+    // When image loads, calculate positioning to center the face
+    const handleImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
+        const img = e.currentTarget;
+        const container = containerRef.current;
+        if (!container || !person.face) {
+            setImgStyle({
+                position: 'absolute',
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover' as const,
+                opacity: 1,
+            });
+            return;
+        }
 
         const { box_x, box_y, box_width, box_height } = person.face;
+        if (!box_width || !box_height || box_width <= 0 || box_height <= 0) {
+            setImgStyle({
+                position: 'absolute',
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover' as const,
+                opacity: 1,
+            });
+            return;
+        }
 
-        // Add some padding around the face (20% extra on each side)
-        const padding = 0.3;
-        const faceSize = Math.max(box_width, box_height) * (1 + padding);
+        const imgNatW = img.naturalWidth;
+        const imgNatH = img.naturalHeight;
+        const containerSize = container.clientWidth; // square container
 
-        // Scale so face fills the container
-        const scale = 1 / faceSize;
+        // Face region in pixels on the original image
+        const faceX = box_x * imgNatW;
+        const faceY = box_y * imgNatH;
+        const faceW = box_width * imgNatW;
+        const faceH = box_height * imgNatH;
+        const faceCenterX = faceX + faceW / 2;
+        const faceCenterY = faceY + faceH / 2;
 
-        // Calculate face center
-        const faceCenterX = box_x + box_width / 2;
-        const faceCenterY = box_y + box_height / 2;
+        // We want the face to occupy about 50% of the card
+        // so we need to scale such that face dimension = 50% of container
+        const faceLargestDim = Math.max(faceW, faceH);
+        const targetFaceSize = containerSize * 0.5;
+        let scale = targetFaceSize / faceLargestDim;
 
-        // Position image so face center is at container center (50%)
-        // After scaling, face center would be at faceCenterX * scale * 100%
-        // We want it at 50%, so offset = 50 - faceCenterX * scale * 100
-        const left = 50 - faceCenterX * scale * 100;
-        const top = 50 - faceCenterY * scale * 100;
+        // Clamp scale: don't shrink below fitting the container, don't zoom more than 5x
+        const minScaleToFit = containerSize / Math.min(imgNatW, imgNatH);
+        scale = Math.max(scale, minScaleToFit);
+        scale = Math.min(scale, 5);
 
-        return {
+        // Scaled image dimensions
+        const scaledW = imgNatW * scale;
+        const scaledH = imgNatH * scale;
+
+        // Position image so face center is at container center
+        let left = containerSize / 2 - faceCenterX * scale;
+        let top = containerSize / 2 - faceCenterY * scale;
+
+        // Clamp so we don't show empty space outside the image
+        // Image must cover the entire container
+        left = Math.min(left, 0);
+        top = Math.min(top, 0);
+        left = Math.max(left, containerSize - scaledW);
+        top = Math.max(top, containerSize - scaledH);
+
+        setImgStyle({
             position: 'absolute',
-            width: `${scale * 100}%`,
-            height: `${scale * 100}%`,
-            left: `${left}%`,
-            top: `${top}%`,
-            objectFit: 'cover'
-        };
+            left: `${left}px`,
+            top: `${top}px`,
+            width: `${scaledW}px`,
+            height: `${scaledH}px`,
+            opacity: 1,
+        });
     };
 
     const handleNameClick = (e: React.MouseEvent) => {
@@ -85,8 +138,10 @@ export const PersonCard: React.FC<PersonCardProps> = ({
     };
 
     const handleNameSubmit = async () => {
-        if (editName.trim() && editName !== person.name) {
-            await window.api.updatePerson(person.id, editName.trim());
+        const trimmed = editName.trim();
+        if (trimmed && trimmed !== person.name) {
+            await window.api.updatePerson(person.id, trimmed);
+            onRename?.(person, trimmed);
         }
         setIsEditing(false);
     };
@@ -100,6 +155,11 @@ export const PersonCard: React.FC<PersonCardProps> = ({
         }
     };
 
+    // Sync editName when person.name changes externally
+    useEffect(() => {
+        setEditName(person.name);
+    }, [person.name]);
+
     return (
         <div
             onClick={onClick}
@@ -108,27 +168,27 @@ export const PersonCard: React.FC<PersonCardProps> = ({
                         hover:scale-[1.03] ${isActive ? 'ring-3 ring-blue-500' : ''}`}
         >
             {/* Face image container - square aspect ratio */}
-            <div className="relative w-full aspect-square overflow-hidden bg-gray-700">
-                {imageUrl ? (
+            <div ref={containerRef} className="relative w-full aspect-square overflow-hidden bg-gray-700">
+                {imageUrl && !imgError ? (
                     <img
                         src={imageUrl}
                         alt={person.name}
-                        style={getCropStyles()}
-                        className="transition-transform duration-300 group-hover:scale-110"
+                        style={imgStyle}
                         loading="lazy"
+                        onLoad={handleImageLoad}
+                        onError={() => setImgError(true)}
                     />
                 ) : (
-                    // Placeholder when no face image
                     <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-600 to-gray-700">
                         <User size={80} className="text-gray-500" />
                     </div>
                 )}
 
-                {/* Gradient overlay at bottom for text readability - like Apple Photos */}
+                {/* Gradient overlay at bottom for text readability */}
                 <div className="absolute inset-x-0 bottom-0 h-24
                                 bg-gradient-to-t from-black/80 via-black/40 to-transparent" />
 
-                {/* Name overlay inside the image - Apple Photos style */}
+                {/* Name overlay inside the image */}
                 <div className="absolute inset-x-0 bottom-0 px-4 pb-3">
                     {isEditing ? (
                         <input

@@ -470,7 +470,12 @@ export const AIFaceView: React.FC = () => {
                                 key={person.id}
                                 person={person}
                                 onClick={() => handlePersonClick(person)}
-                                onDoubleClick={() => handleRenamePerson(person)}
+                                onRename={(p, newName) => {
+                                    // Update local state immediately for instant feedback
+                                    setPeople(prev => prev.map(pp =>
+                                        pp.id === p.id ? { ...pp, name: newName } : pp
+                                    ));
+                                }}
                             />
                         ))}
                     </div>

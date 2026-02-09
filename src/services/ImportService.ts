@@ -448,6 +448,23 @@ class ImportService {
                         height: result.height || photo.height,
                         indexed: true
                     });
+
+                    // Auto AI tagging: analyze image and store keywords
+                    try {
+                        const { analyzeImage, initializeAI } = require('../main/services/AITaggingService');
+                        const aiReady = await initializeAI();
+                        if (aiReady) {
+                            const imagePath = result.thumbnailPath || photo.file_path;
+                            const keywords = await analyzeImage(imagePath);
+                            if (keywords.length > 0) {
+                                catalogDb.addKeywordsByNameToPhoto(photo.id, keywords);
+                                console.log(`[ImportService] AI tagged ${photo.file_name}: [${keywords.join(', ')}]`);
+                            }
+                        }
+                    } catch (aiError) {
+                        // AI tagging failure should not block import
+                        console.warn(`[ImportService] AI tagging skipped for ${photo.file_name}:`, aiError);
+                    }
                 }
             } catch (error) {
                 console.error(`[ImportService] Failed to generate thumbnails for ${photo.file_path}:`, error);

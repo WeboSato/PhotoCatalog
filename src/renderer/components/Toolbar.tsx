@@ -1,9 +1,8 @@
-import React, { useCallback, useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useCatalogStore } from '../stores/catalogStore';
 import {
     Grid3X3,
     Maximize,
-    Columns,
     Search,
     Star,
     Flag,
@@ -18,47 +17,112 @@ import {
     Loader2,
     ScanFace,
     Tag,
-    ChevronDown,
-    Filter,
-    Sparkles
+    Sparkles,
+    Settings,
+    MoreHorizontal,
+    AlertCircle,
+    RefreshCw
 } from 'lucide-react';
 
-// Get store state/actions without causing re-renders
-const getStore = () => useCatalogStore.getState();
+// View mode configuration
+const VIEW_MODES = [
+    { mode: 'grid' as const, icon: Grid3X3, title: 'Grid View (G)' },
+    { mode: 'loupe' as const, icon: Maximize, title: 'Loupe View (E)' },
+    { mode: 'survey' as const, icon: Star, title: 'Rating View (N)' },
+    { mode: 'map' as const, icon: Map, title: 'Map View' },
+    { mode: 'develop' as const, icon: Aperture, title: 'Develop View (D)' },
+    { mode: 'aiface' as const, icon: ScanFace, title: 'AIFACE - People' },
+] as const;
 
-// Keyword filter dropdown component
-const KeywordFilter: React.FC = () => {
+const COLOR_LABELS = [
+    { value: 'none', color: '#666666', name: 'None' },
+    { value: 'red', color: '#ef4444', name: 'Red' },
+    { value: 'yellow', color: '#eab308', name: 'Yellow' },
+    { value: 'green', color: '#22c55e', name: 'Green' },
+    { value: 'blue', color: '#3b82f6', name: 'Blue' },
+    { value: 'purple', color: '#a855f7', name: 'Purple' },
+] as const;
+
+// Advanced Keyword Filter with search and categories
+const AdvancedKeywordFilter: React.FC = () => {
     const [isOpen, setIsOpen] = useState(false);
-    const [keywords, setKeywords] = useState<{ id: string; name: string; photo_count?: number }[]>([]);
-    const activeKeyword = useCatalogStore((s) => s.filters.keywords);
+    const [keywords, setKeywords] = useState<{ id: string; name: string; photo_count?: number; category?: string }[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [activeCategory, setActiveCategory] = useState<string | null>(null);
+    const activeKeyword = useCatalogStore(s => s.filters.keywords);
+    const [error, setError] = useState<string | null>(null);
 
-    // Load keywords on mount
     useEffect(() => {
-        window.api.getKeywords().then((kws) => {
-            // Sort by photo_count descending
-            const sorted = kws.sort((a: any, b: any) => (b.photo_count || 0) - (a.photo_count || 0));
-            setKeywords(sorted.slice(0, 20)); // Top 20 keywords
-        });
+        setLoading(true);
+        setError(null);
+        window.api.getKeywords()
+            .then((kws: any[]) => {
+                // Categorize keywords
+                const categorized = kws.map((kw: any) => {
+                    let category = 'general';
+                    const name = kw.name.toLowerCase();
+                    if (name.includes('animal') || name.includes('dog') || name.includes('cat') || name.includes('bird') || name.includes('chien') || name.includes('chat') || name.includes('oiseau')) {
+                        category = 'animals';
+                    } else if (name.includes('building') || name.includes('house') || name.includes('architecture') || name.includes('maison') || name.includes('église')) {
+                        category = 'architecture';
+                    } else if (name.includes('nature') || name.includes('forest') || name.includes('beach') || name.includes('tree') || name.includes('forêt') || name.includes('plage') || name.includes('arbre')) {
+                        category = 'nature';
+                    } else if (name.includes('food') || name.includes('drink') || name.includes('nourriture') || name.includes('boisson')) {
+                        category = 'food';
+                    }
+                    return { ...kw, category };
+                });
+                const sorted = categorized.sort((a: any, b: any) => (b.photo_count || 0) - (a.photo_count || 0));
+                setKeywords(sorted);
+            })
+            .catch((err: any) => {
+                console.error('[KeywordFilter] Failed to load keywords:', err);
+                setError('Failed to load keywords');
+            })
+            .finally(() => setLoading(false));
     }, []);
 
+    const filteredKeywords = keywords.filter(kw => {
+        const matchesSearch = kw.name.toLowerCase().includes(searchTerm.toLowerCase());
+        const matchesCategory = !activeCategory || kw.category === activeCategory;
+        return matchesSearch && matchesCategory;
+    });
+
+    const categories = ['all', 'animals', 'architecture', 'nature', 'food', 'general'];
+
     const handleKeywordClick = (keywordName: string) => {
-        const { filters, setFilters, setViewMode } = getStore();
+        const store = useCatalogStore.getState();
         if (activeKeyword?.includes(keywordName)) {
-            // Remove keyword filter
-            setFilters({ ...filters, keywords: undefined });
+            store.setFilters({ ...store.filters, keywords: undefined });
         } else {
-            // Add keyword filter and switch to grid view
-            setFilters({ ...filters, keywords: [keywordName], search_text: keywordName });
-            setViewMode('grid');
+            store.setFilters({ ...store.filters, keywords: [keywordName], search_text: keywordName });
+            store.setViewMode('grid');
         }
         setIsOpen(false);
     };
 
     const handleClearKeyword = () => {
-        const { filters, setFilters } = getStore();
-        setFilters({ ...filters, keywords: undefined });
+        const store = useCatalogStore.getState();
+        store.setFilters({ ...store.filters, keywords: undefined });
         setIsOpen(false);
     };
+
+    if (loading) {
+        return (
+            <div className="p-1.5">
+                <Loader2 size={16} className="animate-spin text-gray-400" />
+            </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <div className="p-1.5" title={error}>
+                <AlertCircle size={16} className="text-red-400" />
+            </div>
+        );
+    }
 
     if (keywords.length === 0) return null;
 
@@ -76,35 +140,69 @@ const KeywordFilter: React.FC = () => {
 
             {isOpen && (
                 <>
-                    <div
-                        className="fixed inset-0 z-10"
-                        onClick={() => setIsOpen(false)}
-                    />
-                    <div className="absolute left-0 top-full mt-1 bg-gray-800 border border-gray-700
-                                    rounded-lg shadow-xl z-20 py-1 min-w-[200px] max-h-[300px] overflow-y-auto">
-                        <div className="px-3 py-1.5 text-xs text-gray-500 border-b border-gray-700">
-                            Top Keywords
+                    <div className="fixed inset-0 z-10" onClick={() => setIsOpen(false)} />
+                    <div className="absolute left-0 top-full mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-20 py-2 min-w-[250px] max-h-[400px] overflow-hidden flex flex-col">
+                        <div className="px-3 py-2 border-b border-gray-700 flex items-center justify-between">
+                            <h3 className="text-sm font-medium text-gray-300">Filter by Keywords</h3>
+                            {activeKeyword && (
+                                <button
+                                    onClick={handleClearKeyword}
+                                    className="text-xs text-red-400 hover:text-white flex items-center gap-1"
+                                >
+                                    <X size={12} />
+                                    Clear
+                                </button>
+                            )}
                         </div>
-                        {activeKeyword && (
-                            <button
-                                onClick={handleClearKeyword}
-                                className="w-full text-left px-3 py-1.5 text-sm text-red-400 hover:bg-gray-700 flex items-center gap-2"
-                            >
-                                <X size={12} />
-                                Clear filter
-                            </button>
-                        )}
-                        {keywords.map((kw) => (
-                            <button
-                                key={kw.id}
-                                onClick={() => handleKeywordClick(kw.name)}
-                                className={`w-full text-left px-3 py-1.5 text-sm hover:bg-gray-700 flex items-center justify-between
-                                    ${activeKeyword?.includes(kw.name) ? 'text-blue-400 bg-gray-700/50' : 'text-gray-300'}`}
-                            >
-                                <span className="truncate">{kw.name}</span>
-                                <span className="text-xs text-gray-500 ml-2">{kw.photo_count || 0}</span>
-                            </button>
-                        ))}
+
+                        <div className="p-2 border-b border-gray-700">
+                            <div className="relative">
+                                <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500" />
+                                <input
+                                    type="text"
+                                    placeholder="Search keywords..."
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    className="w-full pl-8 pr-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-1 p-2 border-b border-gray-700 bg-gray-900/50">
+                            {categories.map(category => (
+                                <button
+                                    key={category}
+                                    onClick={() => setActiveCategory(category === 'all' ? null : category)}
+                                    className={`px-2 py-1 text-xs rounded ${
+                                        activeCategory === category || (activeCategory === null && category === 'all')
+                                            ? 'bg-blue-600 text-white'
+                                            : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                                    }`}
+                                >
+                                    {category.charAt(0).toUpperCase() + category.slice(1)}
+                                </button>
+                            ))}
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto p-1">
+                            {filteredKeywords.length === 0 ? (
+                                <div className="p-3 text-center text-gray-500 text-sm">
+                                    No keywords found
+                                </div>
+                            ) : (
+                                filteredKeywords.map((kw) => (
+                                    <button
+                                        key={kw.id}
+                                        onClick={() => handleKeywordClick(kw.name)}
+                                        className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-700 flex items-center justify-between
+                                            ${activeKeyword?.includes(kw.name) ? 'text-blue-400 bg-gray-700/50' : 'text-gray-300'}`}
+                                    >
+                                        <span className="truncate">{kw.name}</span>
+                                        <span className="text-xs text-gray-500 ml-2">{kw.photo_count || 0}</span>
+                                    </button>
+                                ))
+                            )}
+                        </div>
                     </div>
                 </>
             )}
@@ -112,16 +210,17 @@ const KeywordFilter: React.FC = () => {
     );
 };
 
-// Processing status indicator component
+// Processing status indicator with detailed info
 const ProcessingIndicator: React.FC = () => {
-    const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
+    const [progress, setProgress] = useState<{ current: number; total: number; status?: string } | null>(null);
+    const [showDetails, setShowDetails] = useState(false);
 
     useEffect(() => {
-        const unsubscribe = window.api.onThumbnailsProgress((p) => {
+        const unsubscribe = window.api.onThumbnailsProgress((p: any) => {
             if (p.done) {
                 setProgress(null);
             } else if (p.total > 0) {
-                setProgress({ current: p.current, total: p.total });
+                setProgress({ current: p.current, total: p.total, status: p.status });
             }
         });
         return unsubscribe;
@@ -132,21 +231,37 @@ const ProcessingIndicator: React.FC = () => {
     const percent = Math.round((progress.current / progress.total) * 100);
 
     return (
-        <div className="flex items-center gap-2 px-2 py-1 bg-blue-900/50 rounded text-xs text-blue-300">
-            <Loader2 size={12} className="animate-spin" />
-            <span>Processing {progress.current}/{progress.total} ({percent}%)</span>
+        <div className="relative group">
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-900/50 rounded-lg text-xs text-blue-300 hover:bg-blue-800/50 transition-colors cursor-pointer"
+                 onClick={() => setShowDetails(!showDetails)}>
+                <Loader2 size={14} className="animate-spin" />
+                <span>Processing {progress.current}/{progress.total} ({percent}%)</span>
+                <MoreHorizontal size={14} className="opacity-70" />
+            </div>
+
+            {showDetails && progress.status && (
+                <div className="absolute left-0 top-full mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-20 py-2 min-w-[200px]">
+                    <div className="px-3 py-1.5 text-xs text-gray-400 border-b border-gray-700">
+                        Current Status
+                    </div>
+                    <div className="px-3 py-2 text-sm text-gray-300">
+                        {progress.status}
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
 
-// AI Auto-Tag button component
+// Enhanced AI Auto-Tag button with progress
 const AITagButton: React.FC = () => {
     const [isTagging, setIsTagging] = useState(false);
     const [progress, setProgress] = useState<{ current: number; total: number; status: string } | null>(null);
-    const selectedCount = useCatalogStore((s) => s.selectedPhotoIds.size);
+    const selectedCount = useCatalogStore(s => s.selectedPhotoIds.size);
 
     const handleAITag = async () => {
-        const { selectedPhotoIds, photos } = getStore();
+        const store = useCatalogStore.getState();
+        const { selectedPhotoIds, photos } = store;
         const selectedPhotos = photos.filter(p => selectedPhotoIds.has(p.id));
 
         if (selectedPhotos.length === 0) {
@@ -155,43 +270,28 @@ const AITagButton: React.FC = () => {
         }
 
         setIsTagging(true);
-        setProgress({ current: 0, total: selectedPhotos.length, status: 'Loading AI models...' });
+        setProgress({ current: 0, total: selectedPhotos.length, status: 'Loading AI model...' });
 
         try {
-            // Dynamically import the AI service
-            const { aiImageService } = await import('../services/AIImageService');
-
-            // Initialize AI models
-            const initialized = await aiImageService.initialize((pct, status) => {
-                setProgress(prev => prev ? { ...prev, status } : null);
-            });
-
+            const initialized = await window.api.aiInit();
             if (!initialized) {
-                throw new Error('Failed to initialize AI models');
+                throw new Error('Could not load AI model. Check console for details.');
             }
 
-            // Process each photo
             for (let i = 0; i < selectedPhotos.length; i++) {
                 const photo = selectedPhotos[i];
                 setProgress({ current: i + 1, total: selectedPhotos.length, status: `Analyzing ${photo.file_name}...` });
 
                 try {
-                    const imageUrl = photo.thumbnail_path
-                        ? `local-image://${photo.thumbnail_path}`
-                        : `local-image://${photo.file_path}`;
-
-                    const result = await aiImageService.analyzeImage(imageUrl);
-
-                    if (result.keywords.length > 0) {
-                        await window.api.addKeywordsByName(photo.id, result.keywords);
-                    }
+                    const keywords = await window.api.aiAnalyze(photo.id);
+                    console.log(`Tagged ${photo.file_name}:`, keywords);
                 } catch (err) {
                     console.error(`Error tagging ${photo.file_name}:`, err);
                 }
             }
 
-            setProgress({ current: selectedPhotos.length, total: selectedPhotos.length, status: 'Done!' });
-            setTimeout(() => setProgress(null), 2000);
+            setProgress({ current: selectedPhotos.length, total: selectedPhotos.length, status: 'Analysis complete!' });
+            setTimeout(() => setProgress(null), 3000);
         } catch (error) {
             console.error('AI tagging error:', error);
             alert('AI tagging failed: ' + (error as Error).message);
@@ -203,9 +303,11 @@ const AITagButton: React.FC = () => {
 
     if (progress) {
         return (
-            <div className="flex items-center gap-2 px-2 py-1 bg-purple-900/50 rounded text-xs text-purple-300">
-                <Loader2 size={12} className="animate-spin" />
-                <span>{progress.status} ({progress.current}/{progress.total})</span>
+            <div className="relative group">
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-purple-900/50 rounded-lg text-xs text-purple-300">
+                    <Loader2 size={14} className="animate-spin" />
+                    <span>{progress.status} ({progress.current}/{progress.total})</span>
+                </div>
             </div>
         );
     }
@@ -214,218 +316,41 @@ const AITagButton: React.FC = () => {
         <button
             onClick={handleAITag}
             disabled={isTagging || selectedCount === 0}
-            className={`flex items-center gap-1 px-2 py-1.5 text-sm rounded transition-colors
+            className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-colors
                 ${selectedCount > 0
                     ? 'text-purple-300 hover:text-white hover:bg-purple-800/50'
                     : 'text-gray-600 cursor-not-allowed'}`}
             title={selectedCount > 0 ? `AI Auto-Tag ${selectedCount} selected photos` : 'Select photos to AI tag'}
         >
-            <Sparkles size={14} />
+            <Sparkles size={16} />
             <span>AI Tag</span>
         </button>
     );
 };
 
-export const Toolbar: React.FC = React.memo(() => {
-    // ONLY subscribe to what affects render
-    const viewMode = useCatalogStore((s) => s.viewMode);
-    const sidebarCollapsed = useCatalogStore((s) => s.sidebarCollapsed);
-    const rightPanelCollapsed = useCatalogStore((s) => s.rightPanelCollapsed);
-    const searchText = useCatalogStore((s) => s.filters.search_text);
-
-    // Ref for search input to attach native event listener
-    const searchInputRef = useRef<HTMLInputElement>(null);
-
-    // Use native event listener with stopImmediatePropagation to prevent
-    // keyboard shortcuts from triggering when typing in search input
-    useEffect(() => {
-        const input = searchInputRef.current;
-        if (!input) return;
-
-        const handleKeyDown = (e: KeyboardEvent) => {
-            // Stop the event from reaching any other listeners (like window shortcuts)
-            e.stopImmediatePropagation();
-        };
-
-        // Add listener in capture phase to intercept before bubble phase listeners
-        input.addEventListener('keydown', handleKeyDown, true);
-        return () => input.removeEventListener('keydown', handleKeyDown, true);
-    }, []);
-
-    // Check if filters exist (for clear button)
-    const hasFilters = useCatalogStore((s) => {
-        const f = s.filters;
-        return !!(f.rating?.min || f.flag?.length || f.color_label?.length || f.is_raw || f.has_affinity_edit || f.affinity_date || f.search_text);
-    });
-
-    const handleViewMode = useCallback((mode: 'grid' | 'loupe' | 'survey' | 'map' | 'develop' | 'aiface') => {
-        getStore().setViewMode(mode);
-    }, []);
-
-    const handleToggleSidebar = useCallback(() => {
-        getStore().toggleSidebar();
-    }, []);
-
-    const handleToggleRightPanel = useCallback(() => {
-        getStore().toggleRightPanel();
-    }, []);
-
-    const handleSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-        const { filters, setFilters, viewMode, setViewMode, setActiveFolderId, setActiveCollectionId } = getStore();
-        setFilters({ ...filters, search_text: e.target.value || undefined });
-        // When searching, clear folder/collection filter to search ALL photos
-        if (e.target.value) {
-            setActiveFolderId(null);
-            setActiveCollectionId(null);
-            // Switch to grid view to show results
-            if (viewMode !== 'grid') {
-                setViewMode('grid');
-            }
-        }
-    }, []);
-
-    const handleClearFilters = useCallback(() => {
-        getStore().clearFilters();
-    }, []);
-
-    const handleOpenInAffinity = useCallback(async () => {
-        const { photos, activePhotoId } = getStore();
-        const photo = photos.find((p) => p.id === activePhotoId);
-        if (photo) {
-            await window.api.openInAffinityPhoto(photo.file_path, photo.id);
-        }
-    }, []);
-
-    const colorLabels = [
-        { value: 'none', color: '#666666', name: 'None' },
-        { value: 'red', color: '#ef4444', name: 'Red' },
-        { value: 'yellow', color: '#eab308', name: 'Yellow' },
-        { value: 'green', color: '#22c55e', name: 'Green' },
-        { value: 'blue', color: '#3b82f6', name: 'Blue' },
-        { value: 'purple', color: '#a855f7', name: 'Purple' }
-    ];
-
-    return (
-        <div className="h-12 bg-gray-900 border-b border-gray-700 flex items-center justify-between px-2 gap-2">
-            {/* Left section */}
-            <div className="flex items-center gap-2">
-                <button
-                    onClick={handleToggleSidebar}
-                    className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded"
-                    title={sidebarCollapsed ? 'Show Sidebar' : 'Hide Sidebar'}
-                >
-                    {sidebarCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
-                </button>
-
-                <div className="h-6 w-px bg-gray-700" />
-
-                <div className="flex bg-gray-800 rounded p-0.5">
-                    {(['grid', 'loupe', 'survey', 'map', 'develop', 'aiface'] as const).map((mode) => (
-                        <button
-                            key={mode}
-                            onClick={() => handleViewMode(mode)}
-                            className={`p-1.5 rounded ${viewMode === mode ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-white'}`}
-                            title={mode === 'survey' ? 'Rating (N)' : mode === 'aiface' ? 'AIFACE - People' : mode.charAt(0).toUpperCase() + mode.slice(1)}
-                        >
-                            {mode === 'grid' && <Grid3X3 size={18} />}
-                            {mode === 'loupe' && <Maximize size={18} />}
-                            {mode === 'survey' && <Star size={18} />}
-                            {mode === 'map' && <Map size={18} />}
-                            {mode === 'develop' && <Aperture size={18} />}
-                            {mode === 'aiface' && <ScanFace size={18} />}
-                        </button>
-                    ))}
-                </div>
-            </div>
-
-            {/* Center section - Search with keyword filter */}
-            <div className="flex-1 max-w-lg mx-4 flex items-center gap-2">
-                <KeywordFilter />
-                <div className="relative flex-1">
-                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-                    <input
-                        ref={searchInputRef}
-                        type="text"
-                        placeholder="Search photos, keywords..."
-                        value={searchText || ''}
-                        onChange={handleSearchChange}
-                        className="w-full pl-9 pr-8 py-1.5 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
-                    />
-                    {hasFilters && (
-                        <button
-                            onClick={handleClearFilters}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-500 hover:text-white"
-                            title="Clear filters"
-                        >
-                            <X size={14} />
-                        </button>
-                    )}
-                </div>
-            </div>
-
-            {/* Processing indicator */}
-            <ProcessingIndicator />
-
-            {/* Right section - Selection actions (rendered on demand) */}
-            <SelectionActions colorLabels={colorLabels} />
-
-            {/* AI Auto-Tag button */}
-            <AITagButton />
-
-            {/* Edit button */}
-            <button
-                onClick={handleOpenInAffinity}
-                className="flex items-center gap-1 px-2 py-1.5 text-sm text-gray-300 hover:text-white hover:bg-gray-800 rounded"
-                title="Edit in Affinity Photo"
-            >
-                <ExternalLink size={14} />
-                <span>Edit</span>
-            </button>
-
-            {/* Info panel toggle */}
-            <button
-                onClick={handleToggleRightPanel}
-                className={`p-2 rounded ${!rightPanelCollapsed ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}
-                title="Toggle Info Panel"
-            >
-                <SlidersHorizontal size={18} />
-            </button>
-        </div>
-    );
-});
-
-// Separate component for selection actions - only re-renders when selection changes
-const SelectionActions: React.FC<{ colorLabels: { value: string; color: string; name: string }[] }> = React.memo(({ colorLabels }) => {
-    const selectedCount = useCatalogStore((s) => s.selectedPhotoIds.size);
+// Selection actions component
+const SelectionActions: React.FC = React.memo(() => {
+    const selectedCount = useCatalogStore(s => s.selectedPhotoIds.size);
 
     if (selectedCount === 0) return null;
 
-    const handleRating = (rating: number) => {
-        getStore().setSelectedRating(rating);
-    };
-
-    const handleFlag = (flag: 'none' | 'picked' | 'rejected') => {
-        getStore().setSelectedFlag(flag);
-    };
-
-    const handleColor = (color: string) => {
-        getStore().setSelectedColorLabel(color as any);
-    };
-
-    const handleDeselectAll = () => {
-        getStore().deselectAll();
-    };
+    const handleRating = (rating: number) => useCatalogStore.getState().setSelectedRating(rating);
+    const handleFlag = (flag: 'none' | 'picked' | 'rejected') => useCatalogStore.getState().setSelectedFlag(flag);
+    const handleColor = (color: string) => useCatalogStore.getState().setSelectedColorLabel(color as any);
+    const handleDeselectAll = () => useCatalogStore.getState().deselectAll();
 
     return (
-        <>
-            <span className="text-sm text-gray-400">{selectedCount} selected</span>
+        <div className="flex items-center gap-1 bg-gray-800 rounded-lg p-1">
+            <span className="text-sm text-gray-400 px-2">{selectedCount} selected</span>
+
             <button
                 onClick={handleDeselectAll}
-                className="ml-1 p-1 text-gray-400 hover:text-white hover:bg-gray-800 rounded"
+                className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded"
                 title="Deselect all"
             >
-                <X size={14} />
+                <X size={16} />
             </button>
+
             <div className="h-6 w-px bg-gray-700" />
 
             {/* Rating */}
@@ -434,9 +359,9 @@ const SelectionActions: React.FC<{ colorLabels: { value: string; color: string; 
                     <button
                         key={rating}
                         onClick={() => handleRating(rating)}
-                        className="p-1 text-gray-400 hover:text-yellow-400"
+                        className="p-1.5 text-gray-400 hover:text-yellow-400 hover:bg-gray-700 rounded"
                     >
-                        <Star size={14} />
+                        <Star size={16} />
                     </button>
                 ))}
             </div>
@@ -445,14 +370,14 @@ const SelectionActions: React.FC<{ colorLabels: { value: string; color: string; 
 
             {/* Flags */}
             <div className="flex items-center gap-1">
-                <button onClick={() => handleFlag('picked')} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded">
-                    <Check size={14} />
+                <button onClick={() => handleFlag('picked')} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded">
+                    <Check size={16} />
                 </button>
-                <button onClick={() => handleFlag('none')} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded">
-                    <Flag size={14} />
+                <button onClick={() => handleFlag('none')} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded">
+                    <Flag size={16} />
                 </button>
-                <button onClick={() => handleFlag('rejected')} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded">
-                    <X size={14} />
+                <button onClick={() => handleFlag('rejected')} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded">
+                    <X size={16} />
                 </button>
             </div>
 
@@ -460,7 +385,7 @@ const SelectionActions: React.FC<{ colorLabels: { value: string; color: string; 
 
             {/* Colors */}
             <div className="flex items-center gap-1">
-                {colorLabels.map((label) => (
+                {COLOR_LABELS.map((label) => (
                     <button
                         key={label.value}
                         onClick={() => handleColor(label.value)}
@@ -470,13 +395,191 @@ const SelectionActions: React.FC<{ colorLabels: { value: string; color: string; 
                     />
                 ))}
             </div>
-
-            <div className="h-6 w-px bg-gray-700" />
-        </>
+        </div>
     );
 });
-
-Toolbar.displayName = 'Toolbar';
 SelectionActions.displayName = 'SelectionActions';
 
-export default Toolbar;
+// Main Toolbar component
+const Toolbar: React.FC = () => {
+    const viewMode = useCatalogStore(s => s.viewMode);
+    const sidebarCollapsed = useCatalogStore(s => s.sidebarCollapsed);
+    const rightPanelCollapsed = useCatalogStore(s => s.rightPanelCollapsed);
+    const searchText = useCatalogStore(s => s.filters.search_text);
+    const hasFilters = useCatalogStore(s => {
+        const f = s.filters;
+        return !!(f.rating?.min || f.flag?.length || f.color_label?.length || f.is_raw || f.has_affinity_edit || f.affinity_date || f.search_text);
+    });
+
+    const searchInputRef = useRef<HTMLInputElement>(null);
+    const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const [localSearch, setLocalSearch] = useState(searchText || '');
+    const [showSearchOptions, setShowSearchOptions] = useState(false);
+
+    // Sync local search with store when store changes externally (e.g. clear filters)
+    useEffect(() => {
+        setLocalSearch(searchText || '');
+    }, [searchText]);
+
+    // Prevent keyboard shortcuts from triggering when typing in search
+    useEffect(() => {
+        const input = searchInputRef.current;
+        if (!input) return;
+
+        const handleKeyDown = (e: KeyboardEvent) => {
+            e.stopImmediatePropagation();
+        };
+
+        input.addEventListener('keydown', handleKeyDown, true);
+        return () => input.removeEventListener('keydown', handleKeyDown, true);
+    }, []);
+
+    const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const value = e.target.value;
+        setLocalSearch(value);
+
+        // Debounce store update
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+        debounceRef.current = setTimeout(() => {
+            const store = useCatalogStore.getState();
+            store.setFilters({ ...store.filters, search_text: value || undefined });
+
+            if (value) {
+                store.setActiveFolderId(null);
+                store.setActiveCollectionId(null);
+                localStorage.removeItem('photocatalog_active_folder');
+                if (store.viewMode !== 'grid') {
+                    store.setViewMode('grid');
+                }
+            }
+        }, 300);
+    };
+
+    const handleClearFilters = () => {
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+        setLocalSearch('');
+        useCatalogStore.getState().clearFilters();
+    };
+
+    const handleViewMode = (mode: 'grid' | 'loupe' | 'survey' | 'map' | 'develop' | 'aiface') => {
+        useCatalogStore.getState().setViewMode(mode);
+    };
+
+    const handleOpenInAffinity = async () => {
+        const { photos, activePhotoId } = useCatalogStore.getState();
+        const photo = photos.find(p => p.id === activePhotoId);
+        if (photo) {
+            await window.api.openInAffinityPhoto(photo.file_path, photo.id);
+        }
+    };
+
+    const handleRefresh = () => {
+        useCatalogStore.getState().refreshCatalog();
+    };
+
+    return (
+        <div className="h-14 bg-gray-900 border-b border-gray-700 flex items-center justify-between px-3 gap-2">
+            {/* Left section */}
+            <div className="flex items-center gap-2">
+                <button
+                    onClick={() => useCatalogStore.getState().toggleSidebar()}
+                    className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg"
+                    title={sidebarCollapsed ? 'Show Sidebar' : 'Hide Sidebar'}
+                >
+                    {sidebarCollapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
+                </button>
+
+                <div className="h-8 w-px bg-gray-700" />
+
+                <div className="flex bg-gray-800 rounded-lg p-1">
+                    {VIEW_MODES.map(({ mode, icon: Icon, title }) => (
+                        <button
+                            key={mode}
+                            onClick={() => handleViewMode(mode)}
+                            className={`p-2 rounded-lg ${viewMode === mode ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}
+                            title={title}
+                        >
+                            <Icon size={20} />
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            {/* Center section - Enhanced search with keyword filter */}
+            <div className="flex-1 max-w-2xl mx-4 flex items-center gap-2">
+                <AdvancedKeywordFilter />
+
+                <div className="relative flex-1">
+                    <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+                    <input
+                        ref={searchInputRef}
+                        type="text"
+                        placeholder="Search photos, keywords, faces..."
+                        value={localSearch}
+                        onChange={handleSearchChange}
+                        className="w-full pl-10 pr-12 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    />
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                        <button
+                            onClick={() => setShowSearchOptions(!showSearchOptions)}
+                            className="p-1 text-gray-500 hover:text-white hover:bg-gray-700 rounded"
+                            title="Search options"
+                        >
+                            <Settings size={16} />
+                        </button>
+                        {hasFilters && (
+                            <button
+                                onClick={handleClearFilters}
+                                className="p-1 text-gray-500 hover:text-white hover:bg-gray-700 rounded"
+                                title="Clear filters"
+                            >
+                                <X size={16} />
+                            </button>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            {/* Processing indicator */}
+            <ProcessingIndicator />
+
+            {/* Selection actions */}
+            <SelectionActions />
+
+            {/* AI Auto-Tag button */}
+            <AITagButton />
+
+            {/* Action buttons */}
+            <div className="flex items-center gap-1">
+                <button
+                    onClick={handleRefresh}
+                    className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg"
+                    title="Refresh"
+                >
+                    <RefreshCw size={20} />
+                </button>
+
+                <button
+                    onClick={() => useCatalogStore.getState().toggleRightPanel()}
+                    className={`p-2 rounded-lg ${!rightPanelCollapsed ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}
+                    title="Toggle Info Panel"
+                >
+                    <SlidersHorizontal size={20} />
+                </button>
+
+                <button
+                    onClick={handleOpenInAffinity}
+                    className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg"
+                    title="Edit in Affinity Photo"
+                >
+                    <ExternalLink size={20} />
+                </button>
+            </div>
+        </div>
+    );
+};
+
+Toolbar.displayName = 'Toolbar';
+
+export { Toolbar };
+export default React.memo(Toolbar);

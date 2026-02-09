@@ -426,25 +426,8 @@ export const FolderTree: React.FC = () => {
                 setExpandedFolders(savedFolders);
                 setInitialized(true);
 
-                // Restore active folder if saved
-                const savedActiveFolderId = localStorage.getItem(STORAGE_KEYS.activeFolderId);
-                if (savedActiveFolderId) {
-                    setActiveFolderId(savedActiveFolderId);
-                    // Load photos for this folder
-                    const allFolders: FolderNode[] = [];
-                    const collectFolders = (folders: FolderNode[]) => {
-                        for (const f of folders) {
-                            allFolders.push(f);
-                            collectFolders(f.children);
-                        }
-                    };
-                    collectFolders(hierarchy);
-                    const folder = allFolders.find(f => f.id === savedActiveFolderId);
-                    if (folder) {
-                        const photos = await window.api.getPhotosInFolder(folder.path);
-                        setPhotos(photos);
-                    }
-                }
+                // Always start on "All Photos" - don't restore last folder
+                localStorage.removeItem(STORAGE_KEYS.activeFolderId);
             }
         } catch (error) {
             console.error('Failed to load folders:', error);

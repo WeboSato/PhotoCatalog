@@ -61,6 +61,7 @@ export interface FilterCriteria {
     has_affinity_edit?: boolean;
     affinity_date?: string; // Format: YYYY-MM-DD
     search_text?: string;
+    keywords?: string[];
 }
 
 export type ViewMode = 'grid' | 'loupe' | 'survey' | 'map' | 'develop' | 'aiface';
@@ -228,6 +229,12 @@ interface CatalogState {
     setSelectedRating: (rating: number) => void;
     setSelectedFlag: (flag: 'none' | 'picked' | 'rejected') => void;
     setSelectedColorLabel: (color: 'none' | 'red' | 'yellow' | 'green' | 'blue' | 'purple') => void;
+
+    // Copy/Move/Delete/Refresh operations
+    copySelectedPhotos: () => Promise<void>;
+    moveSelectedPhotos: () => Promise<void>;
+    deleteSelectedPhotos: () => Promise<void>;
+    refreshCatalog: () => Promise<void>;
 
     // Development settings
     setDevelopmentSettings: (settings: DevelopmentSettings) => void;
@@ -555,6 +562,73 @@ export const useCatalogStore = create<CatalogState>()(
                 addEditHistory(id, `Color → ${colorLabels[color]}`, previousValues.get(id), color);
             });
         });
+    },
+
+    // Copy selected photos to a folder
+    copySelectedPhotos: async () => {
+        const state = get();
+        const ids = [...state.selectedPhotoIds];
+        if (ids.length === 0) return;
+
+        const targetFolder = await window.api.selectTargetFolder();
+        if (!targetFolder) return;
+
+        const result = await window.api.copyPhotos(ids, targetFolder);
+        if (result.failed > 0) {
+            console.warn(`[Store] Copy: ${result.success} copied, ${result.failed} failed`, result.errors);
+        }
+    },
+
+    // Move selected photos to a folder
+    moveSelectedPhotos: async () => {
+        const state = get();
+        const ids = [...state.selectedPhotoIds];
+        if (ids.length === 0) return;
+
+        const targetFolder = await window.api.selectTargetFolder();
+        if (!targetFolder) return;
+
+        const result = await window.api.movePhotos(ids, targetFolder);
+        if (result.success > 0) {
+            // Refresh photos from DB to get updated paths
+            const photos = await window.api.getPhotos(999999, 0);
+            set({ photos });
+        }
+        if (result.failed > 0) {
+            console.warn(`[Store] Move: ${result.success} moved, ${result.failed} failed`, result.errors);
+        }
+    },
+
+    // Delete selected photos with confirmation
+    deleteSelectedPhotos: async () => {
+        const state = get();
+        const ids = [...state.selectedPhotoIds];
+        if (ids.length === 0) return;
+
+        await window.api.deletePhotos(ids, false);
+        set((s) => ({
+            photos: s.photos.filter((p) => !ids.includes(p.id)),
+            selectedPhotoIds: new Set(),
+            activePhotoId: null,
+        }));
+    },
+
+    // Refresh catalog from database
+    refreshCatalog: async () => {
+        set({ isLoading: true });
+        try {
+            const [photos, collections, keywords, folders, count] = await Promise.all([
+                window.api.getPhotos(999999, 0),
+                window.api.getCollections(),
+                window.api.getKeywords(),
+                window.api.getFolders(),
+                window.api.getPhotoCount(),
+            ]);
+            set({ photos, collections, keywords, folders, totalPhotoCount: count, isLoading: false });
+        } catch (error) {
+            console.error('[Store] Refresh failed:', error);
+            set({ isLoading: false });
+        }
     },
 
     // Development settings
