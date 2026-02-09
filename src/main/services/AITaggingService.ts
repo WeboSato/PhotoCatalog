@@ -252,21 +252,48 @@ export async function analyzeImage(imagePath: string): Promise<string[]> {
     const sumExp = exps.reduce((a, b) => a + b, 0);
     const probs = exps.map(e => e / sumExp);
 
-    // Get top predictions with score > 0.02
+    // Get top predictions with score > 0.05 (5% minimum confidence)
     const indexed = probs.map((p, i) => ({ prob: p, index: i }));
     indexed.sort((a, b) => b.prob - a.prob);
 
-    // Words too generic to be useful as keywords
+    // Words too generic or commonly misidentified by MobileNet on portraits/photos
     const EXCLUDED_WORDS = new Set([
+        // Generic/useless
         'background', 'object', 'image', 'scene', 'photo', 'picture',
         'web site', 'website', 'screen', 'monitor', 'display',
         'analog clock', 'digital clock', 'wall clock',
-        'rule', 'measuring', 'scale',
+        'rule', 'measuring', 'scale', 'space bar', 'menu',
+        // Commonly misidentified on portraits
+        'water bottle', 'bottle cap', 'nipple', 'nipples',
+        'drumstick', 'stethoscope', 'ping-pong ball', 'band-aid',
+        'band aid', 'bow tie', 'bib', 'diaper', 'maillot',
+        'pajama', 'pajamas', 'swimming trunks', 'bikini',
+        'hair spray', 'lotion', 'face powder', 'lipstick',
+        'toilet tissue', 'soap dispenser', 'paper towel',
+        'syringe', 'pill bottle', 'medicine chest',
+        // Too specific/technical ImageNet classes
+        'jersey', 'sweatshirt', 'cardigan', 'jean', 'trench coat',
+        'lab coat', 'suit', 'academic gown', 'mortarboard',
+        'military uniform', 'abaya', 'kimono', 'sarong',
+        'miniskirt', 'hoopskirt', 'overskirt', 'stole',
+        'feather boa', 'bonnet', 'cowboy hat', 'sombrero',
+        'shower cap', 'bathing cap', 'gas mask', 'ski mask',
+        'neck brace', 'knee pad', 'running shoe',
+        // Random objects MobileNet confuses with body parts/skin
+        'rubber eraser', 'pencil sharpener', 'envelope', 'buckle',
+        'safety pin', 'nail', 'screw', 'hook', 'thimble',
+        'measuring cup', 'ladle', 'spatula', 'corkscrew',
+        'can opener', 'plunger', 'mousetrap', 'mousetrap',
+        'whistle', 'combination lock', 'padlock',
+        'ballpoint', 'fountain pen', 'quill', 'rubber band',
+        'magnetic compass', 'binoculars', 'projector',
+        'slot', 'vending machine', 'cash machine',
+        'barbell', 'dumbbell', 'weight',
     ]);
 
     const englishKeywords: string[] = [];
     for (const item of indexed.slice(0, 10)) {
-        if (item.prob < 0.02) break;
+        if (item.prob < 0.05) break; // 5% minimum confidence
 
         const label = labels[item.index];
         if (!label) continue;
@@ -285,9 +312,9 @@ export async function analyzeImage(imagePath: string): Promise<string[]> {
         englishKeywords.push(cleaned);
     }
 
-    // Build bilingual keyword list: English + French
+    // Build bilingual keyword list: English + French (max 5 keywords)
     const allKeywords = new Set<string>();
-    for (const en of englishKeywords.slice(0, 8)) {
+    for (const en of englishKeywords.slice(0, 5)) {
         allKeywords.add(en);
         const fr = translateKeyword(en);
         if (fr && fr !== en) {
