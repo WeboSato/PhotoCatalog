@@ -3,6 +3,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { useCatalogStore, Photo, DevelopmentSettings, defaultDevelopmentSettings } from '../stores/catalogStore';
 import { Minus, Plus, RotateCcw, RotateCw, Trash2, Star, X } from 'lucide-react';
 import { getThumbnailUrl, PLACEHOLDER_IMAGE } from '../utils/imageUrl';
+import { decode } from 'blurhash';
 import { DeleteDialog } from './DeleteDialog';
 
 const getStore = () => useCatalogStore.getState();
@@ -125,6 +126,22 @@ const PhotoCell = React.memo<{
         return computeCssFilter(devSettings);
     }, [photo.develop_settings]);
 
+    // BlurHash canvas placeholder
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    useEffect(() => {
+        if (!photo.blur_hash || !canvasRef.current) return;
+        try {
+            const pixels = decode(photo.blur_hash, 32, 32);
+            const ctx = canvasRef.current.getContext('2d');
+            if (!ctx) return;
+            const imageData = ctx.createImageData(32, 32);
+            imageData.data.set(pixels);
+            ctx.putImageData(imageData, 0, 0);
+        } catch {
+            // Invalid blur hash, ignore
+        }
+    }, [photo.blur_hash]);
+
     // Reset state when URL changes
     useEffect(() => {
         if (!thumbUrl || thumbUrl === PLACEHOLDER_IMAGE) {
@@ -176,7 +193,6 @@ const PhotoCell = React.memo<{
                 }}
             />
             {loadState === 'loading' && (
-                // Darktable-style: show gradient placeholder while loading
                 <div style={{
                     width: '100%',
                     height: '100%',
@@ -188,14 +204,27 @@ const PhotoCell = React.memo<{
                     top: 0,
                     left: 0,
                 }}>
-                    <div style={{
-                        width: 24,
-                        height: 24,
-                        border: '2px solid #333',
-                        borderTopColor: '#666',
-                        borderRadius: '50%',
-                        animation: 'spin 1s linear infinite'
-                    }} />
+                    {photo.blur_hash ? (
+                        <canvas
+                            ref={canvasRef}
+                            width={32}
+                            height={32}
+                            style={{
+                                width: '100%',
+                                height: '100%',
+                                objectFit: 'cover',
+                            }}
+                        />
+                    ) : (
+                        <div style={{
+                            width: 24,
+                            height: 24,
+                            border: '2px solid #333',
+                            borderTopColor: '#666',
+                            borderRadius: '50%',
+                            animation: 'spin 1s linear infinite'
+                        }} />
+                    )}
                 </div>
             )}
             {loadState === 'error' && (
@@ -378,6 +407,7 @@ const PhotoCell = React.memo<{
     prev.photo.thumbnail_path === next.photo.thumbnail_path &&
     prev.photo.file_type === next.photo.file_type &&
     prev.photo.edit_copy_path === next.photo.edit_copy_path &&
+    prev.photo.blur_hash === next.photo.blur_hash &&
     prev.isSelected === next.isSelected &&
     prev.size === next.size &&
     prev.inSurveyMode === next.inSurveyMode
@@ -480,7 +510,9 @@ export const PhotoGrid: React.FC = React.memo(() => {
     // Use store photos directly - no local state duplication
     const photos = storePhotos;
 
-    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    // Use store selectedPhotoIds directly (no duplicated local state)
+    const selectedIds = useCatalogStore((s) => s.selectedPhotoIds);
+    const setSelectedPhotoIds = useCatalogStore((s) => s.setSelectedPhotoIds);
     const [containerWidth, setContainerWidth] = useState(0);
     const [contextMenu, setContextMenu] = useState<ContextMenuState>({ visible: false, x: 0, y: 0, photo: null });
     const [availableEditors, setAvailableEditors] = useState<{ id: string; name: string }[]>([]);
@@ -505,12 +537,12 @@ export const PhotoGrid: React.FC = React.memo(() => {
     const columnCount = Math.max(1, Math.floor(effectiveWidth / cellSize));
     const rowCount = Math.ceil(photos.length / columnCount);
 
-    // Virtual rows
+    // Virtual rows (overscan 8 for smoother scroll - was 3)
     const rowVirtualizer = useVirtualizer({
         count: rowCount,
         getScrollElement: () => parentRef.current,
         estimateSize: () => cellSize,
-        overscan: 3,
+        overscan: 8,
     });
 
     // Load photos - only when NOT browsing a folder (folders load via FolderTree)
@@ -554,34 +586,12 @@ export const PhotoGrid: React.FC = React.memo(() => {
         return unsubscribe;
     }, [loadPhotos, activeFolderId]);
 
-    // Subscribe to selection changes
-    useEffect(() => {
-        const unsubscribe = useCatalogStore.subscribe(
-            (state) => state.selectedPhotoIds,
-            (ids) => setSelectedIds(ids)
-        );
-        setSelectedIds(getStore().selectedPhotoIds);
-        return unsubscribe;
-    }, []);
+    // Selection changes are now read directly from the store (no duplicated subscribe)
 
-    // Track container size - multiple fallbacks for reliability
+    // Track container size - ResizeObserver only (removed setTimeout fallbacks)
     useEffect(() => {
         const container = parentRef.current;
         if (!container) return;
-
-        const updateWidth = () => {
-            const rect = container.getBoundingClientRect();
-            const width = rect.width || container.clientWidth || container.offsetWidth;
-            if (width > 0) {
-                setContainerWidth(width);
-            }
-        };
-
-        // Initial measurement - try multiple times
-        updateWidth();
-        requestAnimationFrame(updateWidth);
-        setTimeout(updateWidth, 100);
-        setTimeout(updateWidth, 500);
 
         const observer = new ResizeObserver((entries) => {
             const entry = entries[0];
@@ -595,14 +605,7 @@ export const PhotoGrid: React.FC = React.memo(() => {
 
         observer.observe(container);
 
-        // Window resize as backup
-        const handleResize = () => updateWidth();
-        window.addEventListener('resize', handleResize);
-
-        return () => {
-            observer.disconnect();
-            window.removeEventListener('resize', handleResize);
-        };
+        return () => observer.disconnect();
     }, []);
 
     // Handle photo click

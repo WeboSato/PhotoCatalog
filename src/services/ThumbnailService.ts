@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import { app } from 'electron';
 import { execSync } from 'child_process';
 import { RAW_EXTENSIONS } from '../database/schema';
+import { encode } from 'blurhash';
 
 // Safe logging to prevent EPIPE errors when console pipe is closed
 const timestamp = () => new Date().toISOString();
@@ -20,14 +21,19 @@ export interface ThumbnailOptions {
     height?: number;
     fit?: 'cover' | 'contain' | 'fill' | 'inside' | 'outside';
     quality?: number;
-    format?: 'jpeg' | 'webp' | 'png';
+    format?: 'jpeg' | 'webp' | 'png' | 'avif';
+    generateAllSizes?: boolean; // Generate small, medium, large, preview
 }
 
 export interface ThumbnailResult {
-    thumbnailPath: string;
-    previewPath: string;
+    thumbnailPath: string;      // medium (512px)
+    previewPath: string;        // preview (2048px)
+    smallPath: string;          // small (256px)
+    largePath: string;          // large (1024px)
     width: number;
     height: number;
+    blurHash?: string;          // BlurHash for placeholder
+    format: 'webp';
 }
 
 const THUMBNAIL_SIZES = {
@@ -100,32 +106,38 @@ class ThumbnailService {
             }
 
             const hashedPath = this.getHashedPath(sourcePath);
+            const smallPath = path.join(this.thumbnailDir, `${hashedPath}_sm.webp`);
             const thumbnailPath = path.join(this.thumbnailDir, `${hashedPath}.webp`);
-            const previewPath = path.join(this.previewDir, `${hashedPath}.webp`);
+            const largePath = path.join(this.thumbnailDir, `${hashedPath}_lg.webp`);
+            const previewPath = path.join(this.previewDir, `${hashedPath}_pv.webp`);
 
-            // Check if thumbnails already exist (parallel file checks)
+            // Check if thumbnails already exist (use medium as sentinel)
             if (!forceRegenerate) {
-                const [thumbExists, previewExists] = await Promise.all([
-                    fs.promises.access(thumbnailPath, fs.constants.F_OK).then(() => true).catch(() => false),
-                    fs.promises.access(previewPath, fs.constants.F_OK).then(() => true).catch(() => false)
-                ]);
+                const thumbExists = await fs.promises.access(thumbnailPath, fs.constants.F_OK).then(() => true).catch(() => false);
 
                 if (thumbExists) {
                     const metadata = await sharp(thumbnailPath).metadata();
                     return {
                         thumbnailPath,
-                        previewPath: previewExists ? previewPath : thumbnailPath,
+                        previewPath,
+                        smallPath,
+                        largePath,
                         width: metadata.width || 0,
-                        height: metadata.height || 0
+                        height: metadata.height || 0,
+                        format: 'webp' as const
                     };
                 }
             }
 
-            // Ensure thumbnail directory exists
+            // Ensure output directories exist
             const thumbnailDir = path.dirname(thumbnailPath);
             const previewDir = path.dirname(previewPath);
-            fs.mkdirSync(thumbnailDir, { recursive: true });
-            fs.mkdirSync(previewDir, { recursive: true });
+            if (thumbnailDir !== previewDir) {
+                fs.mkdirSync(thumbnailDir, { recursive: true });
+                fs.mkdirSync(previewDir, { recursive: true });
+            } else {
+                fs.mkdirSync(thumbnailDir, { recursive: true });
+            }
 
             // Check file type
             const ext = path.extname(sourcePath).toLowerCase();
@@ -334,33 +346,55 @@ class ThumbnailService {
                 throw new Error(`Empty image buffer generated for: ${sourcePath}`);
             }
 
-            // Generate thumbnail (medium size)
-            await sharp(imageBuffer)
-                .rotate() // Auto-rotate based on EXIF orientation
-                .resize(THUMBNAIL_SIZES.medium.width, THUMBNAIL_SIZES.medium.height, {
-                    fit: 'inside',
-                    withoutEnlargement: true
-                })
-                .webp({ quality: 85 })
-                .toFile(thumbnailPath);
+            // Adaptive quality per size
+            const sizeConfigs = [
+                { key: 'small',   size: THUMBNAIL_SIZES.small,   quality: 75, output: smallPath },
+                { key: 'medium',  size: THUMBNAIL_SIZES.medium,  quality: 85, output: thumbnailPath },
+                { key: 'large',   size: THUMBNAIL_SIZES.large,   quality: 88, output: largePath },
+                { key: 'preview', size: THUMBNAIL_SIZES.preview, quality: 92, output: previewPath },
+            ];
 
-            // Generate preview (larger size)
-            if (generatePreview) {
-                await sharp(imageBuffer)
-                    .rotate()
-                    .resize(THUMBNAIL_SIZES.preview.width, THUMBNAIL_SIZES.preview.height, {
+            // Generate all 4 sizes in parallel
+            await Promise.all(sizeConfigs.map(({ size, quality, output }) =>
+                sharp(imageBuffer)
+                    .rotate() // Auto-rotate based on EXIF orientation
+                    .resize(size.width, size.height, {
                         fit: 'inside',
                         withoutEnlargement: true
                     })
-                    .webp({ quality: 90 })
-                    .toFile(previewPath);
+                    .webp({ quality })
+                    .toFile(output)
+            ));
+
+            // Generate BlurHash from a tiny version of the image
+            let blurHash: string | undefined;
+            try {
+                const { data: rawPixels, info: rawInfo } = await sharp(imageBuffer)
+                    .rotate()
+                    .resize(32, 32, { fit: 'inside' })
+                    .ensureAlpha()
+                    .raw()
+                    .toBuffer({ resolveWithObject: true });
+
+                blurHash = encode(
+                    new Uint8ClampedArray(rawPixels),
+                    rawInfo.width,
+                    rawInfo.height,
+                    4, 3
+                );
+            } catch (blurError: any) {
+                safeError(`[ThumbnailService] BlurHash generation failed for ${sourcePath}:`, blurError?.message);
             }
 
             return {
                 thumbnailPath,
-                previewPath: generatePreview ? previewPath : thumbnailPath,
+                previewPath,
+                smallPath,
+                largePath,
                 width: originalWidth,
-                height: originalHeight
+                height: originalHeight,
+                blurHash,
+                format: 'webp' as const
             };
 
         } catch (error: any) {
@@ -431,29 +465,44 @@ class ThumbnailService {
         return results;
     }
 
+    getSmallPath(sourcePath: string): string | null {
+        const hashedPath = this.getHashedPath(sourcePath);
+        const smallPath = path.join(this.thumbnailDir, `${hashedPath}_sm.webp`);
+        return fs.existsSync(smallPath) ? smallPath : null;
+    }
+
     getThumbnailPath(sourcePath: string): string | null {
         const hashedPath = this.getHashedPath(sourcePath);
         const thumbnailPath = path.join(this.thumbnailDir, `${hashedPath}.webp`);
         return fs.existsSync(thumbnailPath) ? thumbnailPath : null;
     }
 
+    getLargePath(sourcePath: string): string | null {
+        const hashedPath = this.getHashedPath(sourcePath);
+        const largePath = path.join(this.thumbnailDir, `${hashedPath}_lg.webp`);
+        return fs.existsSync(largePath) ? largePath : null;
+    }
+
     getPreviewPath(sourcePath: string): string | null {
         const hashedPath = this.getHashedPath(sourcePath);
-        const previewPath = path.join(this.previewDir, `${hashedPath}.webp`);
+        const previewPath = path.join(this.previewDir, `${hashedPath}_pv.webp`);
         return fs.existsSync(previewPath) ? previewPath : null;
     }
 
     async deleteThumbnails(sourcePath: string): Promise<void> {
         const hashedPath = this.getHashedPath(sourcePath);
-        const thumbnailPath = path.join(this.thumbnailDir, `${hashedPath}.webp`);
-        const previewPath = path.join(this.previewDir, `${hashedPath}.webp`);
+        const pathsToDelete = [
+            path.join(this.thumbnailDir, `${hashedPath}_sm.webp`),
+            path.join(this.thumbnailDir, `${hashedPath}.webp`),
+            path.join(this.thumbnailDir, `${hashedPath}_lg.webp`),
+            path.join(this.previewDir, `${hashedPath}_pv.webp`),
+        ];
 
         try {
-            if (fs.existsSync(thumbnailPath)) {
-                fs.unlinkSync(thumbnailPath);
-            }
-            if (fs.existsSync(previewPath)) {
-                fs.unlinkSync(previewPath);
+            for (const filePath of pathsToDelete) {
+                if (fs.existsSync(filePath)) {
+                    fs.unlinkSync(filePath);
+                }
             }
         } catch (error) {
             safeError(`[ThumbnailService] Error deleting thumbnails for ${sourcePath}:`, error);
@@ -515,6 +564,9 @@ class ThumbnailService {
                 break;
             case 'png':
                 pipeline = pipeline.png({ quality });
+                break;
+            case 'avif':
+                pipeline = pipeline.avif({ quality });
                 break;
             case 'jpeg':
             default:

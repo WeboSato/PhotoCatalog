@@ -24,24 +24,22 @@ extraResources:
     to: resources/
     filter:
       - "**/*"
+  - from: resources/ai-model/
+    to: resources/ai-model/
+    filter:
+      - "**/*"
 
 # macOS configuration
 mac:
   category: public.app-category.photography
   icon: resources/icon.icns
+  identity: null
   target:
     - target: dmg
       arch:
         - arm64
-        - x64
-    - target: zip
-      arch:
-        - arm64
-        - x64
-  hardenedRuntime: true
+  hardenedRuntime: false
   gatekeeperAssess: false
-  entitlements: build/entitlements.mac.plist
-  entitlementsInherit: build/entitlements.mac.plist
   darkModeSupport: true
 
 # DMG configuration with professional appearance

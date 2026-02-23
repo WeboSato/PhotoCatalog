@@ -623,6 +623,7 @@ app.whenReady().then(async () => {
                             catalogDb.updatePhoto(photo.id, {
                                 thumbnail_path: result.thumbnailPath,
                                 preview_path: result.previewPath,
+                                blur_hash: result.blurHash,
                                 width: result.width || photo.width,
                                 height: result.height || photo.height,
                                 indexed: true
@@ -1309,11 +1310,12 @@ const setupGlobalWatchers = () => {
                                             edit_copy_path = ?,
                                             thumbnail_path = ?,
                                             preview_path = ?,
+                                            blur_hash = ?,
                                             file_type = 'AFPHOTO',
                                             is_raw = 0,
                                             updated_at = CURRENT_TIMESTAMP
                                         WHERE id = ?
-                                    `).run(filePath, thumbResult.thumbnailPath, thumbResult.previewPath || null, photoId);
+                                    `).run(filePath, thumbResult.thumbnailPath, thumbResult.previewPath || null, thumbResult.blurHash || null, photoId);
 
                                     if (mainWindow) {
                                         mainWindow.webContents.send('photos:refresh');
@@ -1398,9 +1400,10 @@ const setupAffinityFileWatchers = () => {
                                     UPDATE photos SET
                                         thumbnail_path = ?,
                                         preview_path = ?,
+                                        blur_hash = ?,
                                         updated_at = CURRENT_TIMESTAMP
                                     WHERE id = ?
-                                `).run(thumbResult.thumbnailPath, thumbResult.previewPath || null, photo.id);
+                                `).run(thumbResult.thumbnailPath, thumbResult.previewPath || null, thumbResult.blurHash || null, photo.id);
 
                                 // Notify renderer to refresh
                                 if (mainWindow) {
@@ -1471,6 +1474,7 @@ ipcMain.handle('editor:open', async (_, photoPath: string, photoId: string, edit
                                 edit_copy_path = ?,
                                 thumbnail_path = ?,
                                 preview_path = ?,
+                                blur_hash = ?,
                                 file_type = ?,
                                 is_raw = 0,
                                 updated_at = CURRENT_TIMESTAMP
@@ -1479,6 +1483,7 @@ ipcMain.handle('editor:open', async (_, photoPath: string, photoId: string, edit
                             newEditPath,
                             thumbResult.thumbnailPath,
                             thumbResult.previewPath || null,
+                            thumbResult.blurHash || null,
                             isAffinity ? 'AFPHOTO' : ext.replace('.', '').toUpperCase(),
                             photoId
                         );
@@ -1595,12 +1600,14 @@ ipcMain.handle('editor:linkEditedFile', async (_, photoId: string) => {
                         edit_copy_path = ?,
                         thumbnail_path = ?,
                         preview_path = ?,
+                        blur_hash = ?,
                         file_type = ?
                     WHERE id = ?
                 `).run(
                     editedFilePath,
                     thumbResult.thumbnailPath,
                     thumbResult.previewPath || null,
+                    thumbResult.blurHash || null,
                     isAffinity ? 'AFPHOTO' : ext.replace('.', '').toUpperCase(),
                     photoId
                 );
@@ -1645,6 +1652,284 @@ ipcMain.handle('thumbnails:getCacheSize', () => {
 ipcMain.handle('thumbnails:clearCache', async () => {
     await thumbnailService.clearAllThumbnails();
     return true;
+});
+
+// ===== Enhanced Thumbnail API Handlers =====
+
+/**
+ * Generate thumbnails with custom options
+ * @param filePath - Path to the source image
+ * @param options - Options including format, sizes, forceRegenerate
+ */
+ipcMain.handle('thumbnails:generate', async (_, filePath: string, options?: {
+    format?: 'jpeg' | 'webp' | 'png';
+    sizes?: Array<{ name: string; width: number; height: number }>;
+    quality?: number;
+    forceRegenerate?: boolean;
+    generatePreview?: boolean;
+}) => {
+    try {
+        console.log('[Thumbnails:Generate] Starting thumbnail generation for:', filePath);
+
+        const { forceRegenerate = false, generatePreview = true } = options || {};
+
+        // Use the standard generateThumbnails method
+        const result = await thumbnailService.generateThumbnails(filePath, {
+            forceRegenerate,
+            generatePreview
+        });
+
+        if (!result) {
+            console.error('[Thumbnails:Generate] Failed to generate thumbnail:', filePath);
+            throw new Error(`Failed to generate thumbnail for: ${filePath}`);
+        }
+
+        console.log('[Thumbnails:Generate] Successfully generated:', result.thumbnailPath);
+        return result;
+    } catch (error: any) {
+        console.error('[Thumbnails:Generate] Error:', error.message);
+        throw error;
+    }
+});
+
+/**
+ * Regenerate a specific thumbnail by photo ID
+ * @param photoId - The photo ID in the database
+ */
+ipcMain.handle('thumbnails:regenerate', async (_, photoId: string) => {
+    try {
+        console.log('[Thumbnails:Regenerate] Regenerating thumbnail for photo:', photoId);
+
+        const photo = catalogDb.getPhoto(photoId);
+        if (!photo || !photo.file_path) {
+            throw new Error(`Photo ${photoId} not found or has no file path`);
+        }
+
+        // Check if source file exists
+        if (!fs.existsSync(photo.file_path)) {
+            throw new Error(`Source file not found: ${photo.file_path}`);
+        }
+
+        // Force regenerate thumbnails
+        const result = await thumbnailService.generateThumbnails(photo.file_path, {
+            forceRegenerate: true,
+            generatePreview: true
+        });
+
+        if (!result) {
+            throw new Error(`Failed to regenerate thumbnail for: ${photo.file_path}`);
+        }
+
+        // Update database with new thumbnail paths
+        catalogDb.updatePhoto(photoId, {
+            thumbnail_path: result.thumbnailPath,
+            preview_path: result.previewPath,
+            blur_hash: result.blurHash
+        });
+
+        console.log('[Thumbnails:Regenerate] Successfully regenerated:', result.thumbnailPath);
+        return { success: true, thumbnailPath: result.thumbnailPath, previewPath: result.previewPath };
+    } catch (error: any) {
+        console.error('[Thumbnails:Regenerate] Error:', error.message);
+        return { success: false, error: error.message };
+    }
+});
+
+/**
+ * Validate that a thumbnail exists for a given photo
+ * @param photoId - The photo ID to validate
+ */
+ipcMain.handle('thumbnails:validate', (_, photoId: string) => {
+    try {
+        const photo = catalogDb.getPhoto(photoId);
+        if (!photo) {
+            return { exists: false, reason: 'Photo not found' };
+        }
+
+        if (!photo.thumbnail_path) {
+            return { exists: false, reason: 'No thumbnail path in database' };
+        }
+
+        // Check if thumbnail file exists on disk
+        const thumbnailExists = fs.existsSync(photo.thumbnail_path);
+        const previewExists = photo.preview_path ? fs.existsSync(photo.preview_path) : false;
+
+        if (!thumbnailExists) {
+            return { exists: false, reason: 'Thumbnail file missing on disk', thumbnailPath: photo.thumbnail_path };
+        }
+
+        return {
+            exists: true,
+            thumbnailPath: photo.thumbnail_path,
+            previewPath: previewExists ? photo.preview_path : null,
+            photoId
+        };
+    } catch (error: any) {
+        console.error('[Thumbnails:Validate] Error:', error.message);
+        return { exists: false, reason: error.message };
+    }
+});
+
+/**
+ * Get cache statistics
+ */
+ipcMain.handle('thumbnails:cache:stats', () => {
+    try {
+        const cacheSize = thumbnailService.getCacheSize();
+        const thumbnailDir = path.join(app.getPath('userData'), 'thumbnails');
+
+        // Count number of files
+        const countFiles = (dir: string): number => {
+            if (!fs.existsSync(dir)) return 0;
+            let count = 0;
+            const walkSync = (currentPath: string) => {
+                try {
+                    const entries = fs.readdirSync(currentPath, { withFileTypes: true });
+                    for (const entry of entries) {
+                        const fullPath = path.join(currentPath, entry.name);
+                        if (entry.isDirectory()) {
+                            walkSync(fullPath);
+                        } else if (entry.isFile()) {
+                            count++;
+                        }
+                    }
+                } catch (e) {
+                    // Ignore permission errors
+                }
+            };
+            walkSync(dir);
+            return count;
+        };
+
+        const thumbnailCount = countFiles(path.join(thumbnailDir, 'thumbs'));
+        const previewCount = countFiles(path.join(thumbnailDir, 'previews'));
+
+        const stats = {
+            thumbnailCount,
+            previewCount,
+            totalFiles: thumbnailCount + previewCount,
+            thumbnailSize: cacheSize.thumbnails,
+            previewSize: cacheSize.previews,
+            totalSize: cacheSize.total,
+            thumbnailSizeFormatted: (cacheSize.thumbnails / 1024 / 1024).toFixed(2) + ' MB',
+            previewSizeFormatted: (cacheSize.previews / 1024 / 1024).toFixed(2) + ' MB',
+            totalSizeFormatted: (cacheSize.total / 1024 / 1024).toFixed(2) + ' MB'
+        };
+
+        console.log('[Thumbnails:Cache:Stats]', stats);
+        return stats;
+    } catch (error: any) {
+        console.error('[Thumbnails:Cache:Stats] Error:', error.message);
+        return { error: error.message };
+    }
+});
+
+/**
+ * Clear the thumbnail cache with options
+ */
+ipcMain.handle('thumbnails:cache:clear', async (_, options?: {
+    clearThumbnails?: boolean;
+    clearPreviews?: boolean;
+    preserveRecent?: boolean;
+    recentDays?: number;
+}) => {
+    try {
+        const {
+            clearThumbnails = true,
+            clearPreviews = true,
+            preserveRecent = false,
+            recentDays = 7
+        } = options || {};
+
+        console.log('[Thumbnails:Cache:Clear] Clearing cache...', {
+            clearThumbnails,
+            clearPreviews,
+            preserveRecent,
+            recentDays
+        });
+
+        const thumbnailDir = path.join(app.getPath('userData'), 'thumbnails');
+        const thumbsDir = path.join(thumbnailDir, 'thumbs');
+        const previewsDir = path.join(thumbnailDir, 'previews');
+
+        const cutoffTime = preserveRecent ? Date.now() - (recentDays * 24 * 60 * 60 * 1000) : null;
+
+        const clearDirectory = (dir: string) => {
+            if (!fs.existsSync(dir)) return 0;
+            let cleared = 0;
+
+            const walkAndClear = (currentPath: string) => {
+                try {
+                    const entries = fs.readdirSync(currentPath, { withFileTypes: true });
+                    for (const entry of entries) {
+                        const fullPath = path.join(currentPath, entry.name);
+                        if (entry.isDirectory()) {
+                            walkAndClear(fullPath);
+                            // Remove empty directories
+                            try {
+                                const subEntries = fs.readdirSync(fullPath);
+                                if (subEntries.length === 0) {
+                                    fs.rmdirSync(fullPath);
+                                }
+                            } catch (e) {
+                                // Ignore
+                            }
+                        } else if (entry.isFile()) {
+                            const shouldDelete = !cutoffTime || (() => {
+                                try {
+                                    const stats = fs.statSync(fullPath);
+                                    return stats.mtimeMs < cutoffTime!;
+                                } catch {
+                                    return true;
+                                }
+                            })();
+
+                            if (shouldDelete) {
+                                fs.unlinkSync(fullPath);
+                                cleared++;
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error('[Thumbnails:Cache:Clear] Error clearing:', currentPath, e);
+                }
+            };
+
+            walkAndClear(dir);
+            return cleared;
+        };
+
+        let totalCleared = 0;
+
+        if (clearThumbnails) {
+            const thumbsCleared = clearDirectory(thumbsDir);
+            totalCleared += thumbsCleared;
+            console.log(`[Thumbnails:Cache:Clear] Cleared ${thumbsCleared} thumbnails`);
+        }
+
+        if (clearPreviews) {
+            const previewsCleared = clearDirectory(previewsDir);
+            totalCleared += previewsCleared;
+            console.log(`[Thumbnails:Cache:Clear] Cleared ${previewsCleared} previews`);
+        }
+
+        // If clearing all, use the service method to reset directories
+        if (clearThumbnails && clearPreviews && !preserveRecent) {
+            await thumbnailService.clearAllThumbnails();
+            console.log('[Thumbnails:Cache:Clear] Full cache cleared');
+        } else {
+            console.log(`[Thumbnails:Cache:Clear] Partial cache cleared: ${totalCleared} files`);
+        }
+
+        return {
+            success: true,
+            cleared: totalCleared,
+            message: `${totalCleared} files cleared`
+        };
+    } catch (error: any) {
+        console.error('[Thumbnails:Cache:Clear] Error:', error.message);
+        return { success: false, error: error.message };
+    }
 });
 
 // File operations

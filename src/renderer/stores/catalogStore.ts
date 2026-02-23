@@ -28,6 +28,7 @@ export interface Photo {
     is_raw: boolean;
     thumbnail_path?: string;
     preview_path?: string;
+    blur_hash?: string;
     edit_copy_path?: string;  // Path to external edit copy
     develop_settings?: string; // JSON string of DevelopmentSettings
 }
@@ -167,8 +168,8 @@ interface CatalogState {
     // Edit history per photo (for undo and history panel)
     editHistory: EditHistoryEntry[];
 
-    // Development settings per photo (Map of photoId -> settings)
-    photoDevSettings: Map<string, DevelopmentSettings>;
+    // Development settings per photo (Record for serialization + perf)
+    photoDevSettings: Record<string, DevelopmentSettings>;
 
     // Development settings for current photo (derived from photoDevSettings)
     developmentSettings: DevelopmentSettings;
@@ -278,19 +279,26 @@ export const useCatalogStore = create<CatalogState>()(
 
     navigationHistory: [],
     editHistory: [],
-    photoDevSettings: new Map(),
+    photoDevSettings: {},
     developmentSettings: defaultDevelopmentSettings,
 
-    // Photo actions
+    // Photo actions (optimized: findIndex+slice instead of map for O(1) lookup)
     setPhotos: (photos) => set({ photos }),
     addPhotos: (newPhotos) => set((state) => ({ photos: [...state.photos, ...newPhotos] })),
-    updatePhoto: (id, updates) => set((state) => ({
-        photos: state.photos.map((p) => (p.id === id ? { ...p, ...updates } : p))
-    })),
-    removePhotos: (ids) => set((state) => ({
-        photos: state.photos.filter((p) => !ids.includes(p.id)),
-        selectedPhotoIds: new Set([...state.selectedPhotoIds].filter((id) => !ids.includes(id)))
-    })),
+    updatePhoto: (id, updates) => set((state) => {
+        const idx = state.photos.findIndex(p => p.id === id);
+        if (idx === -1) return {};
+        const newPhotos = state.photos.slice();
+        newPhotos[idx] = { ...newPhotos[idx], ...updates };
+        return { photos: newPhotos };
+    }),
+    removePhotos: (ids) => {
+        const idSet = new Set(ids);
+        set((state) => ({
+            photos: state.photos.filter((p) => !idSet.has(p.id)),
+            selectedPhotoIds: new Set([...state.selectedPhotoIds].filter((id) => !idSet.has(id)))
+        }));
+    },
 
     // Selection actions
     setSelectedPhotoIds: (ids) => set({ selectedPhotoIds: ids }),
@@ -343,8 +351,8 @@ export const useCatalogStore = create<CatalogState>()(
         let photoSettings: DevelopmentSettings | null = null;
 
         if (id) {
-            // First check the in-memory cache
-            photoSettings = state.photoDevSettings.get(id) || null;
+            // First check the in-memory cache (Record instead of Map)
+            photoSettings = state.photoDevSettings[id] || null;
 
             // If not in cache, try to load from the photo object (from DB)
             if (!photoSettings) {
@@ -355,13 +363,11 @@ export const useCatalogStore = create<CatalogState>()(
                             ? JSON.parse(photo.develop_settings)
                             : photo.develop_settings;
                         photoSettings = { ...defaultDevelopmentSettings, ...parsed };
-                        // Cache it
-                        const newPhotoDevSettings = new Map(state.photoDevSettings);
-                        newPhotoDevSettings.set(id, photoSettings);
+                        // Cache it (Record spread instead of new Map)
                         set({
                             activePhotoId: id,
                             developmentSettings: photoSettings,
-                            photoDevSettings: newPhotoDevSettings
+                            photoDevSettings: { ...state.photoDevSettings, [id]: photoSettings }
                         });
                         return;
                     } catch (e) {
@@ -457,7 +463,7 @@ export const useCatalogStore = create<CatalogState>()(
             devSettingsSnapshot: devSnapshot ? { ...devSnapshot } : undefined
         };
         set((s) => ({
-            editHistory: [...s.editHistory.slice(-500), entry]  // Keep last 500 entries
+            editHistory: [...s.editHistory.slice(-100), entry]  // Keep last 100 entries (was 500 - too much RAM)
         }));
     },
     getPhotoEditHistory: (photoId) => {
@@ -472,43 +478,43 @@ export const useCatalogStore = create<CatalogState>()(
         const state = get();
         if (!historyEntry.devSettingsSnapshot) return;
 
-        // Restore development settings from snapshot
         const newSettings = { ...historyEntry.devSettingsSnapshot };
-
-        // Update photoDevSettings map
-        const newPhotoDevSettings = new Map(state.photoDevSettings);
-        newPhotoDevSettings.set(historyEntry.photoId, newSettings);
+        const settingsJson = JSON.stringify(newSettings);
 
         // Save to database
-        window.api.updatePhoto(historyEntry.photoId, { develop_settings: JSON.stringify(newSettings) });
+        window.api.updatePhoto(historyEntry.photoId, { develop_settings: settingsJson });
 
-        // Update the photo in local photos array
-        set((s) => ({
-            developmentSettings: newSettings,
-            photoDevSettings: newPhotoDevSettings,
-            photos: s.photos.map(p => p.id === historyEntry.photoId ? { ...p, develop_settings: JSON.stringify(newSettings) } : p)
-        }));
+        // Update photo in array with findIndex (O(1) lookup vs O(n) map)
+        set((s) => {
+            const idx = s.photos.findIndex(p => p.id === historyEntry.photoId);
+            let newPhotos = s.photos;
+            if (idx !== -1) {
+                newPhotos = s.photos.slice();
+                newPhotos[idx] = { ...newPhotos[idx], develop_settings: settingsJson };
+            }
+            return {
+                developmentSettings: newSettings,
+                photoDevSettings: { ...s.photoDevSettings, [historyEntry.photoId]: newSettings },
+                photos: newPhotos
+            };
+        });
     },
 
-    // Bulk operations
+    // Bulk operations (optimized with Set lookups instead of includes)
     setSelectedRating: (rating) => {
         const state = get();
-        const ids = [...state.selectedPhotoIds];
+        const idSet = state.selectedPhotoIds;
+        const ids = [...idSet];
         if (ids.length === 0) return;
 
-        // Get previous values for history
-        const previousValues = new Map(
-            state.photos.filter(p => ids.includes(p.id)).map(p => [p.id, p.rating])
-        );
+        const previousValues = new Map<string, number>();
+        state.photos.forEach(p => { if (idSet.has(p.id)) previousValues.set(p.id, p.rating); });
 
         window.api.bulkUpdateRating(ids, rating).then(() => {
             const { addEditHistory } = get();
             set((s) => ({
-                photos: s.photos.map((p) =>
-                    ids.includes(p.id) ? { ...p, rating } : p
-                )
+                photos: s.photos.map((p) => idSet.has(p.id) ? { ...p, rating } : p)
             }));
-            // Add to edit history
             ids.forEach(id => {
                 addEditHistory(id, `Rating → ${rating} ★`, previousValues.get(id), rating);
             });
@@ -516,21 +522,19 @@ export const useCatalogStore = create<CatalogState>()(
     },
     setSelectedFlag: (flag) => {
         const state = get();
-        const ids = [...state.selectedPhotoIds];
+        const idSet = state.selectedPhotoIds;
+        const ids = [...idSet];
         if (ids.length === 0) return;
 
-        const previousValues = new Map(
-            state.photos.filter(p => ids.includes(p.id)).map(p => [p.id, p.flag])
-        );
+        const previousValues = new Map<string, string>();
+        state.photos.forEach(p => { if (idSet.has(p.id)) previousValues.set(p.id, p.flag); });
 
         const flagLabels = { none: 'None', picked: 'Picked ✓', rejected: 'Rejected ✗' };
 
         window.api.bulkUpdateFlag(ids, flag).then(() => {
             const { addEditHistory } = get();
             set((s) => ({
-                photos: s.photos.map((p) =>
-                    ids.includes(p.id) ? { ...p, flag } : p
-                )
+                photos: s.photos.map((p) => idSet.has(p.id) ? { ...p, flag } : p)
             }));
             ids.forEach(id => {
                 addEditHistory(id, `Flag → ${flagLabels[flag]}`, previousValues.get(id), flag);
@@ -539,12 +543,12 @@ export const useCatalogStore = create<CatalogState>()(
     },
     setSelectedColorLabel: (color) => {
         const state = get();
-        const ids = [...state.selectedPhotoIds];
+        const idSet = state.selectedPhotoIds;
+        const ids = [...idSet];
         if (ids.length === 0) return;
 
-        const previousValues = new Map(
-            state.photos.filter(p => ids.includes(p.id)).map(p => [p.id, p.color_label])
-        );
+        const previousValues = new Map<string, string>();
+        state.photos.forEach(p => { if (idSet.has(p.id)) previousValues.set(p.id, p.color_label); });
 
         const colorLabels: Record<string, string> = {
             none: 'None', red: 'Red 🔴', yellow: 'Yellow 🟡',
@@ -554,9 +558,7 @@ export const useCatalogStore = create<CatalogState>()(
         window.api.bulkUpdateColorLabel(ids, color).then(() => {
             const { addEditHistory } = get();
             set((s) => ({
-                photos: s.photos.map((p) =>
-                    ids.includes(p.id) ? { ...p, color_label: color } : p
-                )
+                photos: s.photos.map((p) => idSet.has(p.id) ? { ...p, color_label: color } : p)
             }));
             ids.forEach(id => {
                 addEditHistory(id, `Color → ${colorLabels[color]}`, previousValues.get(id), color);
@@ -591,8 +593,9 @@ export const useCatalogStore = create<CatalogState>()(
         const result = await window.api.movePhotos(ids, targetFolder);
         if (result.success > 0) {
             // Refresh photos from DB to get updated paths
-            const photos = await window.api.getPhotos(999999, 0);
-            set({ photos });
+            const count = await window.api.getPhotoCount();
+            const photos = await window.api.getPhotos(count, 0);
+            set({ photos, totalPhotoCount: count });
         }
         if (result.failed > 0) {
             console.warn(`[Store] Move: ${result.success} moved, ${result.failed} failed`, result.errors);
@@ -605,24 +608,26 @@ export const useCatalogStore = create<CatalogState>()(
         const ids = [...state.selectedPhotoIds];
         if (ids.length === 0) return;
 
+        const idSet = new Set(ids);
         await window.api.deletePhotos(ids, false);
         set((s) => ({
-            photos: s.photos.filter((p) => !ids.includes(p.id)),
+            photos: s.photos.filter((p) => !idSet.has(p.id)),
             selectedPhotoIds: new Set(),
             activePhotoId: null,
         }));
     },
 
-    // Refresh catalog from database
+    // Refresh catalog from database (get count first, then load exact amount)
     refreshCatalog: async () => {
         set({ isLoading: true });
         try {
-            const [photos, collections, keywords, folders, count] = await Promise.all([
-                window.api.getPhotos(999999, 0),
+            // Get count first to avoid loading arbitrary large number
+            const count = await window.api.getPhotoCount();
+            const [photos, collections, keywords, folders] = await Promise.all([
+                window.api.getPhotos(count, 0),
                 window.api.getCollections(),
                 window.api.getKeywords(),
                 window.api.getFolders(),
-                window.api.getPhotoCount(),
             ]);
             set({ photos, collections, keywords, folders, totalPhotoCount: count, isLoading: false });
         } catch (error) {
@@ -631,14 +636,15 @@ export const useCatalogStore = create<CatalogState>()(
         }
     },
 
-    // Development settings
+    // Development settings (optimized: Record + findIndex instead of Map + map)
     setDevelopmentSettings: (settings) => {
         const state = get();
         const photoId = state.activePhotoId;
         if (photoId) {
-            const newPhotoDevSettings = new Map(state.photoDevSettings);
-            newPhotoDevSettings.set(photoId, settings);
-            set({ developmentSettings: settings, photoDevSettings: newPhotoDevSettings });
+            set({
+                developmentSettings: settings,
+                photoDevSettings: { ...state.photoDevSettings, [photoId]: settings }
+            });
         } else {
             set({ developmentSettings: settings });
         }
@@ -648,43 +654,38 @@ export const useCatalogStore = create<CatalogState>()(
         const photoId = state.activePhotoId;
         const previousValue = state.developmentSettings[key];
 
-        // Don't add history if value hasn't changed
         if (previousValue === value) return;
 
-        // Capture the PREVIOUS state before making changes
         const previousSettings = { ...state.developmentSettings };
         const newSettings = { ...state.developmentSettings, [key]: value };
 
         if (photoId) {
-            const newPhotoDevSettings = new Map(state.photoDevSettings);
-            newPhotoDevSettings.set(photoId, newSettings);
-
-            // Add to history with snapshot of PREVIOUS state (before this change)
             const { addEditHistory } = get();
             const labelMap: Record<string, string> = {
-                exposure: 'Exposure',
-                contrast: 'Contrast',
-                highlights: 'Highlights',
-                shadows: 'Shadows',
-                whites: 'Whites',
-                blacks: 'Blacks',
-                clarity: 'Clarity',
-                vibrance: 'Vibrance',
-                saturation: 'Saturation',
-                temperature: 'Temperature',
-                tint: 'Tint'
+                exposure: 'Exposure', contrast: 'Contrast', highlights: 'Highlights',
+                shadows: 'Shadows', whites: 'Whites', blacks: 'Blacks',
+                clarity: 'Clarity', vibrance: 'Vibrance', saturation: 'Saturation',
+                temperature: 'Temperature', tint: 'Tint'
             };
             addEditHistory(photoId, `${labelMap[key] || key} → ${value > 0 ? '+' : ''}${value}`, previousValue, value, previousSettings);
 
-            // Save to database (debounced by caller if needed)
-            window.api.updatePhoto(photoId, { develop_settings: JSON.stringify(newSettings) });
+            const settingsJson = JSON.stringify(newSettings);
+            window.api.updatePhoto(photoId, { develop_settings: settingsJson });
 
-            // Update the photo in the local photos array with the new settings
-            set((s) => ({
-                developmentSettings: newSettings,
-                photoDevSettings: newPhotoDevSettings,
-                photos: s.photos.map(p => p.id === photoId ? { ...p, develop_settings: JSON.stringify(newSettings) } : p)
-            }));
+            // findIndex + slice instead of map (avoid iterating all photos)
+            set((s) => {
+                const idx = s.photos.findIndex(p => p.id === photoId);
+                let newPhotos = s.photos;
+                if (idx !== -1) {
+                    newPhotos = s.photos.slice();
+                    newPhotos[idx] = { ...newPhotos[idx], develop_settings: settingsJson };
+                }
+                return {
+                    developmentSettings: newSettings,
+                    photoDevSettings: { ...s.photoDevSettings, [photoId]: newSettings },
+                    photos: newPhotos
+                };
+            });
         } else {
             set({ developmentSettings: newSettings });
         }
@@ -693,22 +694,26 @@ export const useCatalogStore = create<CatalogState>()(
         const state = get();
         const photoId = state.activePhotoId;
         if (photoId) {
-            // Capture previous state before reset
             const previousSettings = { ...state.developmentSettings };
-            const newPhotoDevSettings = new Map(state.photoDevSettings);
-            newPhotoDevSettings.set(photoId, defaultDevelopmentSettings);
-
             const { addEditHistory } = get();
             addEditHistory(photoId, 'Reset', previousSettings, defaultDevelopmentSettings, previousSettings);
 
-            // Save to database
-            window.api.updatePhoto(photoId, { develop_settings: JSON.stringify(defaultDevelopmentSettings) });
+            const settingsJson = JSON.stringify(defaultDevelopmentSettings);
+            window.api.updatePhoto(photoId, { develop_settings: settingsJson });
 
-            set((s) => ({
-                developmentSettings: defaultDevelopmentSettings,
-                photoDevSettings: newPhotoDevSettings,
-                photos: s.photos.map(p => p.id === photoId ? { ...p, develop_settings: JSON.stringify(defaultDevelopmentSettings) } : p)
-            }));
+            set((s) => {
+                const idx = s.photos.findIndex(p => p.id === photoId);
+                let newPhotos = s.photos;
+                if (idx !== -1) {
+                    newPhotos = s.photos.slice();
+                    newPhotos[idx] = { ...newPhotos[idx], develop_settings: settingsJson };
+                }
+                return {
+                    developmentSettings: defaultDevelopmentSettings,
+                    photoDevSettings: { ...s.photoDevSettings, [photoId]: defaultDevelopmentSettings },
+                    photos: newPhotos
+                };
+            });
         } else {
             set({ developmentSettings: defaultDevelopmentSettings });
         }

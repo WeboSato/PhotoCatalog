@@ -39,6 +39,7 @@ export interface Photo {
     raw_type?: string;
     thumbnail_path?: string;
     preview_path?: string;
+    blur_hash?: string;
     edit_copy_path?: string;
     keywords?: string[];
     indexed: boolean;
@@ -93,11 +94,18 @@ export interface FilterCriteria {
 class CatalogDatabase {
     private db: Database.Database | null = null;
     private dbPath: string = '';
+    private searchCache = new Map<string, { data: Photo[]; timestamp: number }>();
+    private cacheTimeout = 300000; // 5 minutes (was 30s - trop court)
+    private stmtCache = new Map<string, Database.Statement>();
 
     initialize(catalogPath?: string): void {
         if (this.db) {
             this.db.close();
         }
+
+        // Vider le cache et les statements prepares
+        this.searchCache.clear();
+        this.stmtCache.clear();
 
         this.dbPath = catalogPath || path.join(
             app?.getPath('userData') || process.cwd(),
@@ -105,17 +113,26 @@ class CatalogDatabase {
         );
 
         this.db = new Database(this.dbPath);
+
+        // Pragmas de performance
         this.db.pragma('journal_mode = WAL');
         this.db.pragma('synchronous = NORMAL');
-        this.db.pragma('cache_size = -128000'); // 128MB cache
+        this.db.pragma('cache_size = -20000'); // 20MB cache (optimise memoire)
         this.db.pragma('temp_store = MEMORY');
-        this.db.pragma('mmap_size = 1073741824'); // 1GB memory-mapped I/O
+        this.db.pragma('mmap_size = 536870912'); // 512MB memory-mapped I/O
         this.db.pragma('page_size = 4096');
+        this.db.pragma('foreign_keys = ON');
 
         this.db.exec(DATABASE_SCHEMA);
 
         // Run migrations for existing databases
         this.runMigrations();
+
+        // Index supplementaires
+        this.createOptimizedIndexes();
+
+        // Verification de sante
+        this.checkDatabaseHealth();
 
         console.log(`[Database] Initialized at ${this.dbPath}`);
     }
@@ -132,6 +149,59 @@ class CatalogDatabase {
         } catch (e) {
             console.warn('[Database] Migration check failed:', e);
         }
+
+        // Migration: Add blur_hash column if it doesn't exist
+        try {
+            const columns2 = this.db!.pragma('table_info(photos)') as { name: string }[];
+            const hasBlurHash = columns2.some(col => col.name === 'blur_hash');
+            if (!hasBlurHash) {
+                this.db!.exec('ALTER TABLE photos ADD COLUMN blur_hash TEXT');
+                console.log('[Database] Migration: Added blur_hash column');
+            }
+        } catch (e) {
+            console.warn('[Database] Migration blur_hash check failed:', e);
+        }
+    }
+
+    private createOptimizedIndexes(): void {
+        const indexes = [
+            // Index supplementaires pour requetes frequentes
+            'CREATE INDEX IF NOT EXISTS idx_photos_file_path ON photos(file_path)',
+            'CREATE INDEX IF NOT EXISTS idx_photos_edit_copy_path ON photos(edit_copy_path)',
+            'CREATE INDEX IF NOT EXISTS idx_photos_hash ON photos(hash)',
+            'CREATE INDEX IF NOT EXISTS idx_photos_date_taken_desc ON photos(date_taken DESC)',
+            // Index composite pour les filtres combines
+            'CREATE INDEX IF NOT EXISTS idx_photos_rating_flag ON photos(rating, flag)',
+            'CREATE INDEX IF NOT EXISTS idx_photos_rating_color ON photos(rating, color_label)',
+            // Index pour les folders
+            'CREATE INDEX IF NOT EXISTS idx_folders_parent_id ON folders(parent_id)',
+            // Index pour collections
+            'CREATE INDEX IF NOT EXISTS idx_collections_parent_id ON collections(parent_id)',
+        ];
+
+        for (const sql of indexes) {
+            try {
+                this.db!.exec(sql);
+            } catch (e) {
+                // Index existe deja ou erreur non-critique
+            }
+        }
+    }
+
+    private checkDatabaseHealth(): void {
+        try {
+            const result = this.db!.prepare('PRAGMA integrity_check').get() as { integrity_check: string };
+            if (result.integrity_check !== 'ok') {
+                console.warn('[Database] Integrity check failed:', result);
+            }
+        } catch (e) {
+            console.error('[Database] Health check failed:', e);
+        }
+    }
+
+    // Invalider le cache quand les donnees changent
+    invalidateCache(): void {
+        this.searchCache.clear();
     }
 
     getDb(): Database.Database {
@@ -139,6 +209,22 @@ class CatalogDatabase {
             throw new Error('Database not initialized. Call initialize() first.');
         }
         return this.db;
+    }
+
+    // Prepared statement cache - réutilise au lieu de re-préparer à chaque appel
+    // LRU-style: evict oldest when cache exceeds 100 entries
+    private stmt(sql: string): Database.Statement {
+        let s = this.stmtCache.get(sql);
+        if (!s) {
+            s = this.getDb().prepare(sql);
+            this.stmtCache.set(sql, s);
+            // Evict oldest entries if cache grows too large
+            if (this.stmtCache.size > 100) {
+                const firstKey = this.stmtCache.keys().next().value;
+                if (firstKey) this.stmtCache.delete(firstKey);
+            }
+        }
+        return s;
     }
 
     // Run multiple operations in a single transaction for performance
@@ -181,6 +267,7 @@ class CatalogDatabase {
             photo.indexed ? 1 : 0, null
         );
 
+        this.invalidateCache();
         return id;
     }
 
@@ -188,7 +275,7 @@ class CatalogDatabase {
         const allowedFields = [
             'rating', 'flag', 'color_label', 'title', 'caption', 'copyright', 'creator',
             'thumbnail_path', 'preview_path', 'indexed', 'width', 'height', 'orientation',
-            'is_raw', 'develop_settings', 'edit_copy_path'
+            'is_raw', 'develop_settings', 'edit_copy_path', 'blur_hash'
         ];
 
         const fields: string[] = [];
@@ -197,7 +284,6 @@ class CatalogDatabase {
         for (const [key, value] of Object.entries(updates)) {
             if (allowedFields.includes(key) && value !== undefined) {
                 fields.push(`${key} = ?`);
-                // Convert booleans to 1/0 for SQLite
                 if (typeof value === 'boolean') {
                     values.push(value ? 1 : 0);
                 } else {
@@ -211,27 +297,30 @@ class CatalogDatabase {
         values.push(id);
         const stmt = this.getDb().prepare(`UPDATE photos SET ${fields.join(', ')} WHERE id = ?`);
         stmt.run(...values);
+        this.invalidateCache();
     }
 
     deletePhoto(id: string): void {
-        this.getDb().prepare('DELETE FROM photos WHERE id = ?').run(id);
+        this.stmt('DELETE FROM photos WHERE id = ?').run(id);
+        this.invalidateCache();
     }
 
     deletePhotos(ids: string[]): void {
         const placeholders = ids.map(() => '?').join(',');
         this.getDb().prepare(`DELETE FROM photos WHERE id IN (${placeholders})`).run(...ids);
+        this.invalidateCache();
     }
 
     getPhoto(id: string): Photo | undefined {
-        return this.getDb().prepare('SELECT * FROM photos WHERE id = ?').get(id) as Photo | undefined;
+        return this.stmt('SELECT * FROM photos WHERE id = ?').get(id) as Photo | undefined;
     }
 
     getPhotoByPath(filePath: string): Photo | undefined {
-        return this.getDb().prepare('SELECT * FROM photos WHERE file_path = ?').get(filePath) as Photo | undefined;
+        return this.stmt('SELECT * FROM photos WHERE file_path = ?').get(filePath) as Photo | undefined;
     }
 
     getAllPhotos(limit: number = 1000, offset: number = 0): Photo[] {
-        return this.getDb().prepare(`
+        return this.stmt(`
             SELECT * FROM photos
             ORDER BY date_taken DESC, date_imported DESC
             LIMIT ? OFFSET ?
@@ -239,11 +328,18 @@ class CatalogDatabase {
     }
 
     getPhotoCount(): number {
-        const result = this.getDb().prepare('SELECT COUNT(*) as count FROM photos').get() as { count: number };
+        const result = this.stmt('SELECT COUNT(*) as count FROM photos').get() as { count: number };
         return result.count;
     }
 
     searchPhotos(criteria: FilterCriteria, limit: number = 1000, offset: number = 0): Photo[] {
+        // Verifier le cache
+        const cacheKey = JSON.stringify({ criteria, limit, offset });
+        const cached = this.searchCache.get(cacheKey);
+        if (cached && Date.now() - cached.timestamp < this.cacheTimeout) {
+            return cached.data;
+        }
+
         const conditions: string[] = ['1=1'];
         const params: any[] = [];
 
@@ -338,11 +434,22 @@ class CatalogDatabase {
             LIMIT ? OFFSET ?
         `;
 
-        return this.getDb().prepare(sql).all(...params) as Photo[];
+        const results = this.getDb().prepare(sql).all(...params) as Photo[];
+
+        // Mettre en cache
+        this.searchCache.set(cacheKey, { data: results, timestamp: Date.now() });
+
+        // Limiter la taille du cache (max 50 entrees)
+        if (this.searchCache.size > 50) {
+            const firstKey = this.searchCache.keys().next().value;
+            if (firstKey) this.searchCache.delete(firstKey);
+        }
+
+        return results;
     }
 
     getPhotosByCollection(collectionId: string): Photo[] {
-        return this.getDb().prepare(`
+        return this.stmt(`
             SELECT p.* FROM photos p
             INNER JOIN collection_photos cp ON p.id = cp.photo_id
             WHERE cp.collection_id = ?
@@ -385,7 +492,7 @@ class CatalogDatabase {
     }
 
     getCollections(): Collection[] {
-        return this.getDb().prepare(`
+        return this.stmt(`
             SELECT c.*, COUNT(cp.photo_id) as photo_count
             FROM collections c
             LEFT JOIN collection_photos cp ON c.id = cp.collection_id
@@ -431,7 +538,7 @@ class CatalogDatabase {
     }
 
     getKeywords(): Keyword[] {
-        return this.getDb().prepare(`
+        return this.stmt(`
             SELECT k.*, COUNT(pk.photo_id) as photo_count
             FROM keywords k
             LEFT JOIN photo_keywords pk ON k.id = pk.keyword_id
@@ -441,7 +548,7 @@ class CatalogDatabase {
     }
 
     getOrCreateKeywordByName(name: string): string {
-        const existing = this.getDb().prepare(`
+        const existing = this.stmt(`
             SELECT id FROM keywords WHERE LOWER(name) = LOWER(?)
         `).get(name) as { id: string } | undefined;
 
@@ -479,7 +586,7 @@ class CatalogDatabase {
     }
 
     getPhotoKeywords(photoId: string): Keyword[] {
-        return this.getDb().prepare(`
+        return this.stmt(`
             SELECT k.* FROM keywords k
             INNER JOIN photo_keywords pk ON k.id = pk.keyword_id
             WHERE pk.photo_id = ?
@@ -501,18 +608,20 @@ class CatalogDatabase {
     }
 
     getFolders(): Folder[] {
-        return this.getDb().prepare(`
-            SELECT f.*, COUNT(p.id) as photo_count
+        // Optimized: use path || '/% to avoid matching partial folder names
+        // and use subquery instead of expensive LEFT JOIN + LIKE + GROUP BY
+        return this.stmt(`
+            SELECT f.*,
+                   (SELECT COUNT(*) FROM photos p
+                    WHERE p.file_path LIKE f.path || '/%') as photo_count
             FROM folders f
-            LEFT JOIN photos p ON p.file_path LIKE f.path || '%'
-            GROUP BY f.id
             ORDER BY f.path
         `).all() as Folder[];
     }
 
     // Get folders with proper hierarchy for tree display
     getFoldersHierarchy(): Folder[] {
-        return this.getDb().prepare(`
+        return this.stmt(`
             SELECT f.*,
                    (SELECT COUNT(*) FROM photos p WHERE p.file_path LIKE f.path || '/%'
                     AND p.file_path NOT LIKE f.path || '/%/%') as photo_count
@@ -647,7 +756,7 @@ class CatalogDatabase {
     // Get child folders of a parent
     getChildFolders(parentId: string | null): Folder[] {
         if (parentId === null) {
-            return this.getDb().prepare(`
+            return this.stmt(`
                 SELECT f.*,
                        (SELECT COUNT(*) FROM photos p WHERE p.file_path LIKE f.path || '/%'
                         AND p.file_path NOT LIKE f.path || '/%/%') as photo_count
@@ -656,7 +765,7 @@ class CatalogDatabase {
                 ORDER BY f.name
             `).all() as Folder[];
         }
-        return this.getDb().prepare(`
+        return this.stmt(`
             SELECT f.*,
                    (SELECT COUNT(*) FROM photos p WHERE p.file_path LIKE f.path || '/%'
                     AND p.file_path NOT LIKE f.path || '/%/%') as photo_count
@@ -669,9 +778,9 @@ class CatalogDatabase {
     // Get folder by path
     getFolderByPath(folderPath: string): Folder | null {
         const normalizedPath = folderPath.endsWith('/') ? folderPath.slice(0, -1) : folderPath;
-        const result = this.getDb().prepare(`
+        const result = this.stmt(`
             SELECT f.*,
-                   (SELECT COUNT(*) FROM photos p WHERE p.file_path LIKE f.path || '/%' OR p.file_path LIKE f.path || '/%/%') as photo_count
+                   (SELECT COUNT(*) FROM photos p WHERE p.file_path LIKE f.path || '/%') as photo_count
             FROM folders f
             WHERE f.path = ?
         `).get(normalizedPath) as Folder | undefined;
@@ -686,12 +795,12 @@ class CatalogDatabase {
             this.deleteFolder(child.id);
         }
         // Then delete this folder
-        this.getDb().prepare('DELETE FROM folders WHERE id = ?').run(folderId);
+        this.stmt('DELETE FROM folders WHERE id = ?').run(folderId);
     }
 
     // Get all folders (flat list)
     getAllFolders(): Folder[] {
-        return this.getDb().prepare(`
+        return this.stmt(`
             SELECT f.*,
                    (SELECT COUNT(*) FROM photos p WHERE p.file_path LIKE f.path || '/%') as photo_count
             FROM folders f
@@ -820,22 +929,26 @@ class CatalogDatabase {
         });
 
         transaction(photos);
+        this.invalidateCache();
         return ids;
     }
 
     bulkUpdateRating(photoIds: string[], rating: number): void {
         const placeholders = photoIds.map(() => '?').join(',');
         this.getDb().prepare(`UPDATE photos SET rating = ? WHERE id IN (${placeholders})`).run(rating, ...photoIds);
+        this.invalidateCache();
     }
 
     bulkUpdateFlag(photoIds: string[], flag: 'none' | 'picked' | 'rejected'): void {
         const placeholders = photoIds.map(() => '?').join(',');
         this.getDb().prepare(`UPDATE photos SET flag = ? WHERE id IN (${placeholders})`).run(flag, ...photoIds);
+        this.invalidateCache();
     }
 
     bulkUpdateColorLabel(photoIds: string[], colorLabel: 'none' | 'red' | 'yellow' | 'green' | 'blue' | 'purple'): void {
         const placeholders = photoIds.map(() => '?').join(',');
         this.getDb().prepare(`UPDATE photos SET color_label = ? WHERE id IN (${placeholders})`).run(colorLabel, ...photoIds);
+        this.invalidateCache();
     }
 
     // ===== PEOPLE OPERATIONS =====
@@ -857,7 +970,7 @@ class CatalogDatabase {
     }
 
     getPeople(): { id: string; name: string; face_count: number; thumbnail_face_id?: string }[] {
-        return this.getDb().prepare(`
+        return this.stmt(`
             SELECT p.*, COUNT(f.id) as face_count
             FROM people p
             LEFT JOIN faces f ON p.id = f.person_id
@@ -867,7 +980,7 @@ class CatalogDatabase {
     }
 
     getPerson(id: string): { id: string; name: string; face_count: number; thumbnail_face_id?: string } | undefined {
-        return this.getDb().prepare(`
+        return this.stmt(`
             SELECT p.*, COUNT(f.id) as face_count
             FROM people p
             LEFT JOIN faces f ON p.id = f.person_id
@@ -906,7 +1019,7 @@ class CatalogDatabase {
     }
 
     getFacesForPhoto(photoId: string): any[] {
-        return this.getDb().prepare(`
+        return this.stmt(`
             SELECT f.*, p.name as person_name
             FROM faces f
             LEFT JOIN people p ON f.person_id = p.id
@@ -915,7 +1028,7 @@ class CatalogDatabase {
     }
 
     getUnidentifiedFaces(): any[] {
-        return this.getDb().prepare(`
+        return this.stmt(`
             SELECT f.*, ph.file_path, ph.thumbnail_path
             FROM faces f
             JOIN photos ph ON f.photo_id = ph.id
@@ -926,7 +1039,7 @@ class CatalogDatabase {
     }
 
     getPhotosByPerson(personId: string): Photo[] {
-        return this.getDb().prepare(`
+        return this.stmt(`
             SELECT DISTINCT p.*
             FROM photos p
             JOIN faces f ON p.id = f.photo_id
@@ -936,7 +1049,7 @@ class CatalogDatabase {
     }
 
     deleteFace(faceId: string): void {
-        this.getDb().prepare('DELETE FROM faces WHERE id = ?').run(faceId);
+        this.stmt('DELETE FROM faces WHERE id = ?').run(faceId);
     }
 
     // ===== DUPLICATE DETECTION =====
@@ -965,6 +1078,7 @@ class CatalogDatabase {
     // ===== FACE CLUSTERING =====
 
     // Get all faces with descriptors for clustering
+    // Cached face queries
     getAllFacesWithDescriptors(): {
         id: string;
         photo_id: string;
@@ -977,7 +1091,7 @@ class CatalogDatabase {
         box_height: number;
         confidence: number;
     }[] {
-        return this.getDb().prepare(`
+        return this.stmt(`
             SELECT f.id, f.photo_id, f.person_id, f.descriptor,
                    f.box_x, f.box_y, f.box_width, f.box_height, f.confidence,
                    p.thumbnail_path
@@ -1000,7 +1114,7 @@ class CatalogDatabase {
         box_height: number;
         confidence: number;
     }[] {
-        return this.getDb().prepare(`
+        return this.stmt(`
             SELECT f.id, f.photo_id, f.descriptor,
                    f.box_x, f.box_y, f.box_width, f.box_height, f.confidence,
                    p.thumbnail_path
@@ -1047,7 +1161,7 @@ class CatalogDatabase {
 
     // Get face by ID with photo info
     getFaceWithPhoto(faceId: string): any {
-        return this.getDb().prepare(`
+        return this.stmt(`
             SELECT f.*, p.file_path, p.thumbnail_path
             FROM faces f
             JOIN photos p ON f.photo_id = p.id
@@ -1113,8 +1227,31 @@ class CatalogDatabase {
         });
     }
 
+    // Optimiser la base de donnees (VACUUM + ANALYZE)
+    optimize(): void {
+        try {
+            this.getDb().exec('ANALYZE');
+            console.log('[Database] ANALYZE completed');
+        } catch (e) {
+            console.warn('[Database] Optimize failed:', e);
+        }
+    }
+
+    // Obtenir la taille de la base de donnees
+    getDatabaseSize(): number {
+        try {
+            const pageCount = (this.getDb().prepare('PRAGMA page_count').get() as any).page_count;
+            const pageSize = (this.getDb().prepare('PRAGMA page_size').get() as any).page_size;
+            return pageCount * pageSize;
+        } catch (e) {
+            return 0;
+        }
+    }
+
     close(): void {
         if (this.db) {
+            this.searchCache.clear();
+            this.stmtCache.clear();
             this.db.close();
             this.db = null;
         }
