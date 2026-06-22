@@ -182,6 +182,7 @@ const PhotoCell = React.memo<{
             <img
                 src={thumbUrl}
                 alt=""
+                decoding="async"
                 onLoad={handleLoad}
                 onError={handleError}
                 style={{
@@ -545,6 +546,10 @@ export const PhotoGrid: React.FC = React.memo(() => {
         overscan: 8,
     });
 
+    const virtualItems = rowVirtualizer.getVirtualItems();
+    const firstVisibleRow = virtualItems.length ? virtualItems[0].index : 0;
+    const lastVisibleRow = virtualItems.length ? virtualItems[virtualItems.length - 1].index : 0;
+
     // Load photos - only when NOT browsing a folder (folders load via FolderTree)
     const loadPhotos = useCallback(async () => {
         // Skip if a folder is selected - FolderTree handles that
@@ -575,16 +580,69 @@ export const PhotoGrid: React.FC = React.memo(() => {
         }
     }, [loadPhotos, activeFolderId]);
 
-    // Listen for photos:refresh to update thumbnails during processing
+    // Listen for photos:refresh to update thumbnails during processing.
+    // During import/AI tagging the main process fires this every ~50 thumbnails,
+    // and each call re-fetches up to 1000 rows + replaces the whole array. Throttle
+    // so a burst collapses to at most one reload per REFRESH_INTERVAL, with a
+    // trailing reload so the final state isn't missed.
+    const lastRefreshRef = useRef(0);
+    const refreshTimerRef = useRef<number | null>(null);
     useEffect(() => {
+        const REFRESH_INTERVAL = 2500;
+        const run = () => { if (!activeFolderId) loadPhotos(); };
         const unsubscribe = window.api.onPhotosRefresh(() => {
-            // Only refresh if not browsing a folder
-            if (!activeFolderId) {
-                loadPhotos();
+            const now = Date.now();
+            const elapsed = now - lastRefreshRef.current;
+            if (elapsed >= REFRESH_INTERVAL) {
+                lastRefreshRef.current = now;
+                run();
+            } else if (refreshTimerRef.current === null) {
+                refreshTimerRef.current = window.setTimeout(() => {
+                    refreshTimerRef.current = null;
+                    lastRefreshRef.current = Date.now();
+                    run();
+                }, REFRESH_INTERVAL - elapsed);
             }
         });
-        return unsubscribe;
+        return () => {
+            unsubscribe();
+            if (refreshTimerRef.current !== null) {
+                clearTimeout(refreshTimerRef.current);
+                refreshTimerRef.current = null;
+            }
+        };
     }, [loadPhotos, activeFolderId]);
+
+    // Directional thumbnail prefetch: warm the local-image cache for rows just
+    // beyond the visible+overscan window in the scroll direction, so fast scroll
+    // shows decoded images instead of spinners. Reuses the same local-image:// URL
+    // (now served async/streamed by the main process) — no extra DB work.
+    const prefetchedRef = useRef<Set<string>>(new Set());
+    const lastScrollTopRef = useRef(0);
+    // Forget what we prefetched when the dataset itself changes.
+    useEffect(() => { prefetchedRef.current.clear(); }, [photos]);
+    useEffect(() => {
+        const PREFETCH_ROWS = 6;
+        const scrollEl = parentRef.current;
+        const goingDown = scrollEl ? scrollEl.scrollTop >= lastScrollTopRef.current : true;
+        if (scrollEl) lastScrollTopRef.current = scrollEl.scrollTop;
+
+        const startRow = goingDown ? lastVisibleRow + 1 : Math.max(0, firstVisibleRow - PREFETCH_ROWS);
+        const endRow = goingDown ? lastVisibleRow + PREFETCH_ROWS : firstVisibleRow - 1;
+
+        for (let r = startRow; r <= endRow; r++) {
+            for (let c = 0; c < columnCount; c++) {
+                const idx = r * columnCount + c;
+                if (idx < 0 || idx >= photos.length) continue;
+                const p = photos[idx];
+                if (!p.thumbnail_path || prefetchedRef.current.has(p.id)) continue;
+                prefetchedRef.current.add(p.id);
+                const img = new Image();
+                img.decoding = 'async';
+                img.src = getThumbnailUrl(p);
+            }
+        }
+    }, [firstVisibleRow, lastVisibleRow, columnCount, photos]);
 
     // Selection changes are now read directly from the store (no duplicated subscribe)
 
@@ -937,7 +995,7 @@ export const PhotoGrid: React.FC = React.memo(() => {
                         position: 'relative',
                     }}
                 >
-                    {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                    {virtualItems.map((virtualRow) => {
                         const startIndex = virtualRow.index * columnCount;
 
                         return (

@@ -132,12 +132,32 @@ export const Sidebar: React.FC = React.memo(() => {
         window.api.getAffinityByDate().then(setAffinityData);
     }, []);
 
-    // Refresh affinity data when photos change
+    // Refresh affinity data when photos change. The main process fires
+    // photos:refresh every ~50 thumbnails during import; this query runs a full
+    // table scan on the main process, so throttle it (trailing) instead of firing
+    // on every tick concurrently with the PhotoGrid reload.
     useEffect(() => {
+        let lastRun = 0;
+        let timer: number | null = null;
+        const REFRESH_INTERVAL = 3000;
+        const run = () => { window.api.getAffinityByDate().then(setAffinityData); };
         const unsubscribe = window.api.onPhotosRefresh(() => {
-            window.api.getAffinityByDate().then(setAffinityData);
+            const elapsed = Date.now() - lastRun;
+            if (elapsed >= REFRESH_INTERVAL) {
+                lastRun = Date.now();
+                run();
+            } else if (timer === null) {
+                timer = window.setTimeout(() => {
+                    timer = null;
+                    lastRun = Date.now();
+                    run();
+                }, REFRESH_INTERVAL - elapsed);
+            }
         });
-        return unsubscribe;
+        return () => {
+            unsubscribe();
+            if (timer !== null) clearTimeout(timer);
+        };
     }, []);
 
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];

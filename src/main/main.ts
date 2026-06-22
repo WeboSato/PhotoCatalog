@@ -9,7 +9,19 @@ process.on('uncaughtException', (err: Error & { code?: string }) => {
 import { app, BrowserWindow, ipcMain, dialog, Menu, shell, protocol, net, clipboard } from 'electron';
 import path from 'path';
 import fs from 'fs';
+import { Readable } from 'stream';
 import os from 'os';
+
+// Built once (not per request) — used by the local-image protocol handler.
+const IMAGE_MIME_TYPES: Record<string, string> = {
+    'webp': 'image/webp',
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'png': 'image/png',
+    'gif': 'image/gif',
+    'tiff': 'image/tiff',
+    'tif': 'image/tiff'
+};
 
 import catalogDb from '../database/Database';
 import thumbnailService from '../services/ThumbnailService';
@@ -573,37 +585,37 @@ app.whenReady().then(async () => {
         const rawPath = request.url.replace('local-image://', '');
         const filePath = rawPath.split('/').map(part => decodeURIComponent(part)).join('/');
 
-        // Check if file exists
-        const fs = require('fs');
-        if (!fs.existsSync(filePath)) {
-            console.error('[Protocol] File not found:', filePath.substring(0, 100));
-            return new Response('File not found', { status: 404 });
-        }
-
-        // Read file directly and return with correct content-type
         try {
-            const data = fs.readFileSync(filePath);
-            const ext = filePath.split('.').pop()?.toLowerCase();
-            const mimeTypes: Record<string, string> = {
-                'webp': 'image/webp',
-                'jpg': 'image/jpeg',
-                'jpeg': 'image/jpeg',
-                'png': 'image/png',
-                'gif': 'image/gif',
-                'tiff': 'image/tiff',
-                'tif': 'image/tiff'
-            };
-            const contentType = mimeTypes[ext || ''] || 'application/octet-stream';
+            // Async stat instead of existsSync — never blocks the main thread, and
+            // gives us mtime/size for an ETag so we can answer revalidations cheaply.
+            const stat = await fs.promises.stat(filePath);
 
-            return new Response(data, {
-                status: 200,
-                headers: {
-                    'Content-Type': contentType,
-                    'Access-Control-Allow-Origin': '*',
-                    'Cache-Control': 'max-age=3600'
-                }
-            });
-        } catch (err) {
+            const ext = filePath.split('.').pop()?.toLowerCase();
+            const contentType = IMAGE_MIME_TYPES[ext || ''] || 'application/octet-stream';
+
+            // Validator tracks size+mtime. Edited thumbnails (mtime changes) refetch
+            // automatically; unchanged files revalidate without re-reading bytes.
+            const etag = `"${stat.size}-${Math.round(stat.mtimeMs)}"`;
+            if (request.headers.get('if-none-match') === etag) {
+                return new Response(null, { status: 304 });
+            }
+
+            const headers: Record<string, string> = {
+                'Content-Type': contentType,
+                'Access-Control-Allow-Origin': '*',
+                'Cache-Control': 'max-age=3600',
+                'ETag': etag,
+                'Last-Modified': stat.mtime.toUTCString()
+            };
+
+            // Stream off the libuv threadpool — the main process never buffers the
+            // whole file, so a burst of grid <img> requests can't serialize-block it.
+            const webStream = Readable.toWeb(fs.createReadStream(filePath)) as ReadableStream;
+            return new Response(webStream, { status: 200, headers });
+        } catch (err: any) {
+            if (err?.code === 'ENOENT') {
+                return new Response('File not found', { status: 404 });
+            }
             console.error('[Protocol] Error reading file:', err);
             return new Response('Error reading file', { status: 500 });
         }

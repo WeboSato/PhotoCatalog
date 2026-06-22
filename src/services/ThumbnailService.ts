@@ -1,11 +1,19 @@
 import sharp from 'sharp';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import crypto from 'crypto';
 import { app } from 'electron';
 import { execSync } from 'child_process';
 import { RAW_EXTENSIONS } from '../database/schema';
 import { encode } from 'blurhash';
+
+// Cap libvips concurrency so background thumbnail (re)generation never saturates
+// every core while the user is scrolling. Leave one core free for the UI/main
+// process. sharp.cache(false) avoids holding decoded originals in memory across
+// the batch jobs (main.ts runs regen + AI tagging in the background on startup).
+sharp.concurrency(Math.max(1, os.cpus().length - 1));
+sharp.cache(false);
 
 // Safe logging to prevent EPIPE errors when console pipe is closed
 const timestamp = () => new Date().toISOString();

@@ -36,7 +36,6 @@
     "devDependencies": {
         "@types/better-sqlite3": "^7.6.12",
         "@types/node": "^22.0.0",
-        "@types/react-window": "^1.8.8",
         "@types/uuid": "^10.0.0",
         "@vitejs/plugin-react": "^4.3.4",
         "autoprefixer": "^10.4.20",
@@ -66,15 +65,11 @@
         "exifreader": "^4.33.1",
         "face-api.js": "^0.22.2",
         "leaflet": "^1.9.4",
-        "lru-cache": "^11.2.4",
         "lucide-react": "^0.468.0",
         "onnxruntime-node": "^1.24.1",
         "react": "^18.3.1",
         "react-dom": "^18.3.1",
         "react-leaflet": "^5.0.0",
-        "react-virtualized-auto-sizer": "^1.0.26",
-        "react-window": "^2.2.3",
-        "react-window-infinite-loader": "^2.0.0",
         "sharp": "^0.33.5",
         "uuid": "^11.0.4",
         "zustand": "^5.0.3"
