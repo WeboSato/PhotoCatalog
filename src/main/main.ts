@@ -56,6 +56,83 @@ async function recoverExistingThumbnails(photos: any[]): Promise<number> {
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
+// Verify the catalog's storage volume is mounted before we touch the database.
+// The catalog (and images) typically live on an external SSD. If that drive is
+// not connected, opening a SQLite DB at the missing path would CREATE a fresh,
+// empty catalog at the dead mount point — and the startup background jobs
+// (thumbnail regen, AI auto-tagging) would then run against it, effectively
+// corrupting/overwriting the real library once the drive comes back.
+//
+// Instead we block startup with a clear "connect your drive" prompt and never
+// initialize the DB on a missing path. Returns false if the user chooses to quit.
+function ensureCatalogAvailable(): boolean {
+    const catalogDir = settingsService.get('catalogPath');
+
+    // No custom location => catalog lives in userData, which is always present.
+    if (!catalogDir || catalogDir.length === 0) {
+        return true;
+    }
+
+    const isAvailable = (): boolean => {
+        try {
+            return fs.existsSync(catalogDir) && fs.statSync(catalogDir).isDirectory();
+        } catch {
+            return false;
+        }
+    };
+
+    while (!isAvailable()) {
+        const driveName = catalogDir.startsWith('/Volumes/')
+            ? catalogDir.split('/')[2]
+            : catalogDir;
+
+        const choice = dialog.showMessageBoxSync({
+            type: 'warning',
+            title: 'Catalogue indisponible',
+            message: 'Le disque du catalogue n’est pas connecté',
+            detail:
+                `PhotoCatalog ne trouve pas son catalogue à l’emplacement :\n${catalogDir}\n\n` +
+                `Branche le disque « ${driveName} » puis clique sur Réessayer.\n\n` +
+                'Aucun nouveau catalogue ne sera créé : ta bibliothèque ne risque pas d’être corrompue.',
+            buttons: ['Réessayer', 'Quitter'],
+            defaultId: 0,
+            cancelId: 1,
+            noLink: true
+        });
+
+        if (choice === 1) {
+            return false; // user chose to quit
+        }
+        // otherwise loop and re-check after they (hopefully) plugged the drive in
+    }
+
+    return true;
+}
+
+// Point the dock/taskbar at the freshly-built RGBA icon at runtime. In a packaged
+// build macOS uses the bundle's .icns automatically, but this also fixes the dev
+// run (electron .) where the icon would otherwise be the default Electron diamond.
+function setRuntimeAppIcon(): void {
+    if (process.platform !== 'darwin' || !app.dock) {
+        return;
+    }
+    const candidates = [
+        path.join(process.resourcesPath || '', 'resources', 'icon.png'),
+        path.join(app.getAppPath(), 'resources', 'icon.png'),
+        path.join(__dirname, '..', '..', '..', 'resources', 'icon.png')
+    ];
+    for (const iconPath of candidates) {
+        try {
+            if (fs.existsSync(iconPath)) {
+                app.dock.setIcon(iconPath);
+                break;
+            }
+        } catch {
+            // ignore and try next candidate
+        }
+    }
+}
+
 // Get system info for bug reports
 function getSystemInfo(): string {
     const electronVersion = process.versions.electron;
@@ -578,6 +655,17 @@ app.whenReady().then(async () => {
             return new Response('Error reading model', { status: 500 });
         }
     });
+
+    // Point the dock at the freshly-built RGBA icon (mainly helps the dev run).
+    setRuntimeAppIcon();
+
+    // Block startup if the catalog's drive is not mounted. This must run BEFORE
+    // catalogDb.initialize(), otherwise an empty catalog would be created at the
+    // missing path and the background jobs would corrupt the real library.
+    if (!ensureCatalogAvailable()) {
+        app.quit();
+        return;
+    }
 
     // Initialize database with path from settings
     const catalogPath = settingsService.getCatalogDbPath();
