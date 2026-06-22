@@ -170,6 +170,8 @@ class CatalogDatabase {
             'CREATE INDEX IF NOT EXISTS idx_photos_edit_copy_path ON photos(edit_copy_path)',
             'CREATE INDEX IF NOT EXISTS idx_photos_hash ON photos(hash)',
             'CREATE INDEX IF NOT EXISTS idx_photos_date_taken_desc ON photos(date_taken DESC)',
+            // Composite index covering the grid's exact sort key (full-library load).
+            'CREATE INDEX IF NOT EXISTS idx_photos_taken_imported ON photos(date_taken DESC, date_imported DESC)',
             // Index composite pour les filtres combines
             'CREATE INDEX IF NOT EXISTS idx_photos_rating_flag ON photos(rating, flag)',
             'CREATE INDEX IF NOT EXISTS idx_photos_rating_color ON photos(rating, color_label)',

@@ -558,13 +558,17 @@ export const PhotoGrid: React.FC = React.memo(() => {
         loadingRef.current = true;
 
         try {
+            // Load the whole library (no 1000-row cap). react-virtual only renders
+            // the visible rows, so a 20k+ photo array is fine; the cap was silently
+            // truncating large catalogs. LOAD_ALL is a sentinel "all rows" limit.
+            const LOAD_ALL = 1_000_000;
             let data: Photo[];
             if (activeCollectionId) {
                 data = await window.api.getCollectionPhotos(activeCollectionId);
             } else if (Object.keys(filters).length > 0) {
-                data = await window.api.searchPhotos(filters, 1000, 0);
+                data = await window.api.searchPhotos(filters, LOAD_ALL, 0);
             } else {
-                data = await window.api.getPhotos(1000, 0);
+                data = await window.api.getPhotos(LOAD_ALL, 0);
             }
             setPhotos(data);
         } catch (e) {
