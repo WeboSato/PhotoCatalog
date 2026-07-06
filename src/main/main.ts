@@ -215,10 +215,10 @@ function createWindow(): void {
     // Initialize update service
     updateService.setMainWindow(mainWindow);
 
-    // Check for updates silently on startup (after 5 seconds)
-    setTimeout(() => {
-        updateService.checkForUpdates(true);
-    }, 5000);
+    // NOTE: the automatic startup update check is intentionally disabled. The app
+    // is distributed unsigned/un-notarized, so a downloaded DMG is blocked by
+    // Gatekeeper and the "Download Update" prompt is a dead end. Updates remain
+    // available on demand via the "Check for Updates…" menu item.
 
     createMenu();
 }
