@@ -4,6 +4,10 @@
 interface ElectronAPI {
     // Dialog operations
     openDirectory: () => Promise<string | null>;
+    openDirectoryDialog: () => Promise<string | null>;
+    regenerateThumbnails: () => Promise<any>;
+    syncLightroom: () => Promise<any>;
+    importLightroom: () => Promise<any>;
     openFiles: (filters?: any[]) => Promise<string[]>;
     saveFile: (options: any) => Promise<string | null>;
 

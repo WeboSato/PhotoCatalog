@@ -2098,6 +2098,29 @@ ipcMain.handle('lightroom:importAll', async (event, catalogPath: string) => {
     });
 });
 
+// No-arg convenience wrappers used by SettingsModal: auto-pick the best Lightroom
+// catalog, then sync/import. Progress is sent on 'import:progress' (what the
+// Settings UI listens to via onImportProgress).
+ipcMain.handle('lightroom:syncAuto', async (event) => {
+    const best = lightroomImportService.findBestCatalog();
+    if (!best || !best.path) {
+        return { success: false, error: 'Aucun catalogue Lightroom trouvé sur ce Mac.' };
+    }
+    return lightroomImportService.syncMetadata(best.path, (current, total) => {
+        event.sender.send('import:progress', { current, total, status: 'Synchronisation Lightroom…' });
+    });
+});
+
+ipcMain.handle('lightroom:importAuto', async (event) => {
+    const best = lightroomImportService.findBestCatalog();
+    if (!best || !best.path) {
+        return { success: false, error: 'Aucun catalogue Lightroom trouvé sur ce Mac.' };
+    }
+    return lightroomImportService.importAllFromLightroom(best.path, (current, total, status) => {
+        event.sender.send('import:progress', { current, total, status: status || 'Import Lightroom…' });
+    });
+});
+
 // People/Face operations
 ipcMain.handle('people:getAll', () => {
     return catalogDb.getPeople();

@@ -5,6 +5,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 contextBridge.exposeInMainWorld('api', {
     // Dialog operations
     openDirectory: () => ipcRenderer.invoke('dialog:openDirectory'),
+    openDirectoryDialog: () => ipcRenderer.invoke('dialog:openDirectory'), // alias used by ImportDialog
     openFiles: (filters?: Electron.FileFilter[]) => ipcRenderer.invoke('dialog:openFiles', filters),
     saveFile: (options: Electron.SaveDialogOptions) => ipcRenderer.invoke('dialog:saveFile', options),
 
@@ -80,6 +81,7 @@ contextBridge.exposeInMainWorld('api', {
     importFiles: (filePaths: string[], options: any) => ipcRenderer.invoke('import:files', filePaths, options),
     reindexPhoto: (photoId: string) => ipcRenderer.invoke('import:reindex', photoId),
     reindexAllPhotos: () => ipcRenderer.invoke('import:reindexAll'),
+    regenerateThumbnails: () => ipcRenderer.invoke('import:reindexAll'), // alias used by SettingsModal
 
     // Metadata operations
     extractMetadata: (filePath: string) => ipcRenderer.invoke('metadata:extract', filePath),
@@ -110,6 +112,9 @@ contextBridge.exposeInMainWorld('api', {
     lightroomSyncMetadata: (catalogPath: string) => ipcRenderer.invoke('lightroom:syncMetadata', catalogPath),
     lightroomImport: (catalogPath: string, options: any) => ipcRenderer.invoke('lightroom:import', catalogPath, options),
     lightroomImportAll: (catalogPath: string) => ipcRenderer.invoke('lightroom:importAll', catalogPath),
+    // No-arg convenience wrappers used by SettingsModal: auto-pick the best catalog.
+    syncLightroom: () => ipcRenderer.invoke('lightroom:syncAuto'),
+    importLightroom: () => ipcRenderer.invoke('lightroom:importAuto'),
     onLightroomProgress: (callback: (progress: any) => void) => {
         const handler = (_event: any, progress: any) => callback(progress);
         ipcRenderer.on('lightroom:progress', handler);
