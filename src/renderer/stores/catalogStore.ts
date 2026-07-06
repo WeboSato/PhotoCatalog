@@ -65,7 +65,7 @@ export interface FilterCriteria {
     keywords?: string[];
 }
 
-export type ViewMode = 'grid' | 'loupe' | 'survey' | 'map' | 'develop' | 'aiface';
+export type ViewMode = 'grid' | 'loupe' | 'survey' | 'map' | 'develop' | 'aiface' | 'album';
 export type SortBy = 'date_taken' | 'date_imported' | 'file_name' | 'rating';
 export type SortOrder = 'asc' | 'desc';
 

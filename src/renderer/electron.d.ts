@@ -32,6 +32,18 @@ interface ElectronAPI {
     addPhotosToCollection: (collectionId: string, photoIds: string[]) => Promise<boolean>;
     removePhotosFromCollection: (collectionId: string, photoIds: string[]) => Promise<boolean>;
 
+    // Album / Photo Book operations
+    getAlbums: () => Promise<import('../shared/albumTypes').Album[]>;
+    createAlbum: (a: Partial<import('../shared/albumTypes').Album>) => Promise<string>;
+    updateAlbum: (id: string, u: Partial<import('../shared/albumTypes').Album>) => Promise<boolean>;
+    deleteAlbum: (id: string) => Promise<boolean>;
+    getAlbumPages: (id: string) => Promise<import('../shared/albumTypes').AlbumPage[]>;
+    saveAlbumPages: (id: string, pages: import('../shared/albumTypes').AlbumPage[]) => Promise<boolean>;
+    getPhotosByIds: (ids: string[]) => Promise<any[]>;
+    exportAlbumPdf: (spec: import('../shared/albumTypes').AlbumRenderSpec, savePath: string) => Promise<import('../shared/albumTypes').AlbumExportResult>;
+    exportAlbumSlideshow: (spec: import('../shared/albumTypes').AlbumRenderSpec, savePath: string) => Promise<import('../shared/albumTypes').AlbumExportResult>;
+    onAlbumProgress: (callback: (p: import('../shared/albumTypes').AlbumProgress) => void) => () => void;
+
     // Keyword operations
     getKeywords: () => Promise<any[]>;
     createKeyword: (keyword: any) => Promise<string>;

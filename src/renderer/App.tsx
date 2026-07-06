@@ -17,6 +17,7 @@ import './styles/globals.css';
 const MapView = lazy(() => import('./components/MapView'));
 const DevelopView = lazy(() => import('./components/DevelopView'));
 const AIFaceView = lazy(() => import('./components/AIFaceView'));
+const AlbumView = lazy(() => import('./components/album/AlbumView'));
 
 // Get store actions once - they're stable and don't need subscriptions
 const getStoreActions = () => useCatalogStore.getState();
@@ -395,9 +396,14 @@ const App: React.FC = () => {
                                     <AIFaceView />
                                 </Suspense>
                             )}
+                            {viewMode === 'album' && (
+                                <Suspense fallback={<div className="flex-1 flex items-center justify-center text-gray-500">Chargement de l'album…</div>}>
+                                    <AlbumView />
+                                </Suspense>
+                            )}
                         </div>
 
-                        <InfoPanel />
+                        {viewMode !== 'album' && <InfoPanel />}
                     </div>
                 </div>
             </div>

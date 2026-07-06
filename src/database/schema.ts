@@ -107,6 +107,38 @@ CREATE TABLE IF NOT EXISTS collection_photos (
     PRIMARY KEY (collection_id, photo_id)
 );
 
+-- Albums / Photo Books
+CREATE TABLE IF NOT EXISTS albums (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    page_format TEXT NOT NULL DEFAULT '4x6',   -- '4x6'|'5x7'|'8x10'|'sq20'|'sq30'
+    target_type TEXT NOT NULL DEFAULT 'book' CHECK(target_type IN ('book','slideshow')),
+    cover_photo_id TEXT REFERENCES photos(id) ON DELETE SET NULL, -- deleting a photo never errors an album
+    settings TEXT,        -- JSON {bleedMm, dpi, cropMarks, backgroundColor, density, curationWeights}
+    agent_summary TEXT,   -- JSON build report (keepers, reasons) for re-display
+    sort_order INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS album_pages (
+    id TEXT PRIMARY KEY,
+    album_id TEXT REFERENCES albums(id) ON DELETE CASCADE,
+    page_index INTEGER NOT NULL,
+    page_kind TEXT NOT NULL DEFAULT 'photo' CHECK(page_kind IN ('cover','photo','divider')),
+    layout_template TEXT,  -- 'full-bleed-1'|'grid-2'|'grid-3'|'grid-4'|'hero-2'
+    layout_data TEXT       -- JSON {slots:[{x,y,w,h}] normalized 0..1 within trim box, bg, caption}
+);
+
+CREATE TABLE IF NOT EXISTS album_page_photos (
+    page_id TEXT REFERENCES album_pages(id) ON DELETE CASCADE,
+    photo_id TEXT REFERENCES photos(id) ON DELETE CASCADE,
+    slot_index INTEGER NOT NULL,
+    crop_data TEXT,        -- JSON {scale,offsetX,offsetY,focalX,focalY,pinned}
+    PRIMARY KEY (page_id, photo_id, slot_index)
+);
+
 -- Keywords/Tags table with hierarchy
 CREATE TABLE IF NOT EXISTS keywords (
     id TEXT PRIMARY KEY,
@@ -221,6 +253,8 @@ CREATE INDEX IF NOT EXISTS idx_photo_keywords_photo ON photo_keywords(photo_id);
 CREATE INDEX IF NOT EXISTS idx_photo_keywords_keyword ON photo_keywords(keyword_id);
 CREATE INDEX IF NOT EXISTS idx_folders_path ON folders(path);
 CREATE INDEX IF NOT EXISTS idx_edit_history_photo ON edit_history(photo_id);
+CREATE INDEX IF NOT EXISTS idx_album_pages_album ON album_pages(album_id);
+CREATE INDEX IF NOT EXISTS idx_album_page_photos_page ON album_page_photos(page_id);
 
 -- Triggers for updated_at
 CREATE TRIGGER IF NOT EXISTS update_photos_timestamp
@@ -233,6 +267,12 @@ CREATE TRIGGER IF NOT EXISTS update_collections_timestamp
     AFTER UPDATE ON collections
     BEGIN
         UPDATE collections SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+    END;
+
+CREATE TRIGGER IF NOT EXISTS update_albums_timestamp
+    AFTER UPDATE ON albums
+    BEGIN
+        UPDATE albums SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
     END;
 
 -- People table: Named individuals for face recognition

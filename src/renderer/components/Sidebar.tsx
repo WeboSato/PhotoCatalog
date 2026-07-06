@@ -20,7 +20,8 @@ import {
     Settings,
     ScanFace,
     Trash2,
-    X
+    X,
+    BookOpen
 } from 'lucide-react';
 import { SettingsModal } from './SettingsModal';
 
@@ -475,6 +476,22 @@ export const Sidebar: React.FC = React.memo(() => {
                         {peopleCount > 0 && (
                             <span className="text-xs text-gray-500">{peopleCount}</span>
                         )}
+                    </button>
+                </div>
+
+                {/* Albums / Photo Books */}
+                <div className="mb-2">
+                    <button
+                        onClick={() => {
+                            getStore().setViewMode('album');
+                        }}
+                        className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium
+                                   text-gray-300 hover:text-white hover:bg-gray-800 rounded transition-colors"
+                    >
+                        <div className="flex items-center gap-2">
+                            <BookOpen size={16} className="text-blue-400" />
+                            <span>Albums</span>
+                        </div>
                     </button>
                 </div>
 

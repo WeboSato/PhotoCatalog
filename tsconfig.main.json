@@ -18,7 +18,8 @@
     "include": [
         "src/main/**/*",
         "src/database/**/*",
-        "src/services/**/*"
+        "src/services/**/*",
+        "src/shared/**/*"
     ],
     "exclude": [
         "node_modules",

@@ -1,0 +1,203 @@
+import { create } from 'zustand';
+import { useCatalogStore, Photo } from './catalogStore';
+import { fullBleedPages, buildRenderSpec, LayoutPhoto } from '../services/LayoutEngine';
+import {
+    Album, AlbumPage, AlbumSettings, AlbumBuildSummary, AlbumExportResult,
+    AlbumProgress, PageFormat, AlbumTargetType, DEFAULT_ALBUM_SETTINGS
+} from '../../shared/albumTypes';
+
+// Deterministic offline curation for the MVP: drop rejects, order chronologically,
+// pick the best-scored photo as cover. (The richer AlbumAgentService — near-dup
+// collapse, people coverage, multi-photo layouts — is a Phase-2 upgrade.)
+function scorePhoto(p: Photo): number {
+    return (p.rating || 0) * 10
+        + (p.flag === 'picked' ? 8 : 0)
+        + (p.color_label && p.color_label !== 'none' ? 2 : 0);
+}
+
+function curate(photos: Photo[]): { orderedIds: string[]; coverId?: string; summary: AlbumBuildSummary } {
+    const usable = photos.filter(p => p.flag !== 'rejected');
+    const sorted = [...usable].sort((a, b) => {
+        const da = a.date_taken || a.date_imported || '';
+        const db = b.date_taken || b.date_imported || '';
+        if (da && db) return da < db ? -1 : da > db ? 1 : 0;
+        return 0;
+    });
+    const cover = sorted.reduce<Photo | undefined>((best, p) => (!best || scorePhoto(p) > scorePhoto(best) ? p : best), undefined);
+    const rejectedCount = photos.length - usable.length;
+    return {
+        orderedIds: sorted.map(p => p.id),
+        coverId: cover?.id,
+        summary: {
+            keeperCount: sorted.length,
+            pageCount: sorted.length,
+            strategy: 'Ordonné par date, 1 photo par page (pleine page). Couverture = mieux notée.',
+            reasons: cover ? { [cover.id]: 'Choisie comme couverture (meilleure note).' } : undefined,
+        },
+    };
+}
+
+function toLayoutMap(photos: Photo[]): Map<string, LayoutPhoto> {
+    return new Map(photos.map(p => [p.id, p as unknown as LayoutPhoto]));
+}
+
+interface AlbumState {
+    albums: Album[];
+    activeAlbum: Album | null;
+    pages: AlbumPage[];
+    photosById: Map<string, LayoutPhoto>;
+    settings: AlbumSettings;
+    summary: AlbumBuildSummary | null;
+    progress: AlbumProgress | null;
+    busy: 'idle' | 'building' | 'exporting';
+    lastExport: AlbumExportResult | null;
+
+    loadAlbums: () => Promise<void>;
+    buildFromSelection: (name: string, format: PageFormat, targetType: AlbumTargetType) => Promise<string | null>;
+    openAlbum: (id: string) => Promise<void>;
+    closeAlbum: () => void;
+    deleteAlbum: (id: string) => Promise<void>;
+    removePage: (pageId: string) => Promise<void>;
+    movePage: (from: number, to: number) => Promise<void>;
+    setProgress: (p: AlbumProgress | null) => void;
+    exportActive: (mode: 'book' | 'slideshow') => Promise<AlbumExportResult | null>;
+    clearLastExport: () => void;
+}
+
+export const useAlbumStore = create<AlbumState>((set, get) => ({
+    albums: [],
+    activeAlbum: null,
+    pages: [],
+    photosById: new Map(),
+    settings: { ...DEFAULT_ALBUM_SETTINGS },
+    summary: null,
+    progress: null,
+    busy: 'idle',
+    lastExport: null,
+
+    loadAlbums: async () => {
+        const albums = await window.api.getAlbums();
+        set({ albums });
+    },
+
+    buildFromSelection: async (name, format, targetType) => {
+        // Read selection/photos ONCE from the grid store (no selectPhoto side-effects).
+        const { photos, selectedPhotoIds } = useCatalogStore.getState();
+        const pool = selectedPhotoIds.size > 0 ? photos.filter(p => selectedPhotoIds.has(p.id)) : photos;
+        if (pool.length === 0) return null;
+
+        set({ busy: 'building', progress: { phase: 'curate', message: 'Sélection des photos…' } });
+        const { orderedIds, coverId, summary } = curate(pool);
+        const settings = { ...DEFAULT_ALBUM_SETTINGS };
+
+        const albumId = await window.api.createAlbum({
+            name,
+            page_format: format,
+            target_type: targetType,
+            cover_photo_id: coverId,
+            settings,
+            agent_summary: JSON.stringify(summary),
+        });
+        await window.api.saveAlbumPages(albumId, fullBleedPages(orderedIds));
+
+        // Reload pages from DB so working copy has the generated page ids.
+        const savedPages = await window.api.getAlbumPages(albumId);
+        await get().loadAlbums();
+        const album = (get().albums.find(a => a.id === albumId)) || null;
+
+        set({
+            activeAlbum: album,
+            pages: savedPages,
+            photosById: toLayoutMap(pool),
+            settings,
+            summary,
+            busy: 'idle',
+            progress: null,
+        });
+        return albumId;
+    },
+
+    openAlbum: async (id) => {
+        const albums = get().albums.length ? get().albums : (await window.api.getAlbums());
+        const album = albums.find(a => a.id === id) || null;
+        const pages = await window.api.getAlbumPages(id);
+        const ids = Array.from(new Set(pages.flatMap(p => p.photos.map(s => s.photo_id))));
+        const photos = ids.length ? await window.api.getPhotosByIds(ids) : [];
+        set({
+            albums,
+            activeAlbum: album,
+            pages,
+            photosById: new Map(photos.map((p: any) => [p.id, p as LayoutPhoto])),
+            settings: album?.settings || { ...DEFAULT_ALBUM_SETTINGS },
+            summary: album?.agent_summary ? safeParse(album.agent_summary) : null,
+        });
+    },
+
+    closeAlbum: () => set({ activeAlbum: null, pages: [], photosById: new Map(), summary: null }),
+
+    deleteAlbum: async (id) => {
+        await window.api.deleteAlbum(id);
+        if (get().activeAlbum?.id === id) get().closeAlbum();
+        await get().loadAlbums();
+    },
+
+    removePage: async (pageId) => {
+        const album = get().activeAlbum;
+        if (!album) return;
+        const pages = get().pages.filter(p => p.id !== pageId).map((p, i) => ({ ...p, page_index: i }));
+        set({ pages });
+        await window.api.saveAlbumPages(album.id, pages);
+    },
+
+    movePage: async (from, to) => {
+        const album = get().activeAlbum;
+        if (!album) return;
+        const pages = [...get().pages];
+        if (from < 0 || from >= pages.length || to < 0 || to >= pages.length) return;
+        const [moved] = pages.splice(from, 1);
+        pages.splice(to, 0, moved);
+        const reindexed = pages.map((p, i) => ({ ...p, page_index: i }));
+        set({ pages: reindexed });
+        await window.api.saveAlbumPages(album.id, reindexed);
+    },
+
+    setProgress: (p) => set({ progress: p }),
+
+    exportActive: async (mode) => {
+        const { activeAlbum, pages, photosById, settings } = get();
+        if (!activeAlbum || pages.length === 0) return null;
+
+        const suggestedName = `${activeAlbum.name}${mode === 'slideshow' ? '-diaporama' : ''}.pdf`;
+        const savePath = await window.api.saveFile({
+            title: mode === 'slideshow' ? 'Exporter le diaporama' : 'Exporter le livre PDF',
+            defaultPath: suggestedName,
+            filters: [{ name: 'PDF', extensions: ['pdf'] }],
+        });
+        if (!savePath) return null;
+
+        // Ensure the render spec has full photo rows (file_path/preview_path/is_raw).
+        let photoMap = photosById;
+        const missing = Array.from(new Set(pages.flatMap(p => p.photos.map(s => s.photo_id)))).filter(id => !photoMap.has(id));
+        if (missing.length) {
+            const fetched = await window.api.getPhotosByIds(missing);
+            photoMap = new Map(photoMap);
+            fetched.forEach((p: any) => photoMap.set(p.id, p as LayoutPhoto));
+        }
+
+        const albumForSpec = { page_format: activeAlbum.page_format, target_type: (mode === 'slideshow' ? 'slideshow' : 'book') as AlbumTargetType };
+        const spec = buildRenderSpec(albumForSpec, pages, photoMap, settings);
+
+        set({ busy: 'exporting', progress: { phase: 'resample', current: 0, total: pages.length }, lastExport: null });
+        const result = mode === 'slideshow'
+            ? await window.api.exportAlbumSlideshow(spec, savePath)
+            : await window.api.exportAlbumPdf(spec, savePath);
+        set({ busy: 'idle', progress: null, lastExport: result });
+        return result;
+    },
+
+    clearLastExport: () => set({ lastExport: null }),
+}));
+
+function safeParse(s: string): any {
+    try { return JSON.parse(s); } catch { return null; }
+}

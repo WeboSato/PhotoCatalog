@@ -21,7 +21,8 @@ import {
     Settings,
     MoreHorizontal,
     AlertCircle,
-    RefreshCw
+    RefreshCw,
+    BookOpen
 } from 'lucide-react';
 
 // View mode configuration
@@ -32,6 +33,7 @@ const VIEW_MODES = [
     { mode: 'map' as const, icon: Map, title: 'Map View' },
     { mode: 'develop' as const, icon: Aperture, title: 'Develop View (D)' },
     { mode: 'aiface' as const, icon: ScanFace, title: 'AIFACE - People' },
+    { mode: 'album' as const, icon: BookOpen, title: 'Album / Livre photo (B)' },
 ] as const;
 
 const COLOR_LABELS = [
@@ -461,7 +463,7 @@ const Toolbar: React.FC = () => {
         useCatalogStore.getState().clearFilters();
     };
 
-    const handleViewMode = (mode: 'grid' | 'loupe' | 'survey' | 'map' | 'develop' | 'aiface') => {
+    const handleViewMode = (mode: 'grid' | 'loupe' | 'survey' | 'map' | 'develop' | 'aiface' | 'album') => {
         useCatalogStore.getState().setViewMode(mode);
     };
 

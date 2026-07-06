@@ -3,6 +3,7 @@ import path from 'path';
 import { app } from 'electron';
 import { DATABASE_SCHEMA } from './schema';
 import { v4 as uuidv4 } from 'uuid';
+import type { Album, AlbumPage } from '../shared/albumTypes';
 
 export interface Photo {
     id: string;
@@ -522,6 +523,96 @@ class CatalogDatabase {
             DELETE FROM collection_photos
             WHERE collection_id = ? AND photo_id IN (${placeholders})
         `).run(collectionId, ...photoIds);
+    }
+
+    // ===== ALBUM / PHOTO BOOK OPERATIONS =====
+    // Mirrors the collection pattern: writes via getDb().prepare(), reads via
+    // this.stmt(), page saves wrapped in a transaction. JSON is parsed in the
+    // getters (unlike the smart_criteria latent bug) because the render pipeline
+    // needs real objects. Album writes NEVER call invalidateCache() — searchCache
+    // is photo-query-keyed and clearing it would re-run the full-library query.
+
+    createAlbum(a: Partial<Album>): string {
+        const id = a.id || uuidv4();
+        this.getDb().prepare(`
+            INSERT INTO albums (id, name, description, page_format, target_type, cover_photo_id, settings, agent_summary, sort_order)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+            id, a.name, a.description ?? null, a.page_format ?? '4x6', a.target_type ?? 'book',
+            a.cover_photo_id ?? null, a.settings ? JSON.stringify(a.settings) : null,
+            a.agent_summary ?? null, a.sort_order ?? 0
+        );
+        return id;
+    }
+
+    updateAlbum(id: string, u: Partial<Album>): void {
+        const fields: string[] = [];
+        const values: any[] = [];
+        if (u.name !== undefined) { fields.push('name = ?'); values.push(u.name); }
+        if (u.description !== undefined) { fields.push('description = ?'); values.push(u.description); }
+        if (u.page_format !== undefined) { fields.push('page_format = ?'); values.push(u.page_format); }
+        if (u.target_type !== undefined) { fields.push('target_type = ?'); values.push(u.target_type); }
+        if (u.cover_photo_id !== undefined) { fields.push('cover_photo_id = ?'); values.push(u.cover_photo_id); }
+        if (u.settings !== undefined) { fields.push('settings = ?'); values.push(JSON.stringify(u.settings)); }
+        if (u.agent_summary !== undefined) { fields.push('agent_summary = ?'); values.push(u.agent_summary); }
+        if (fields.length === 0) return;
+        values.push(id);
+        this.getDb().prepare(`UPDATE albums SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+    }
+
+    deleteAlbum(id: string): void {
+        // album_pages + album_page_photos cascade via ON DELETE CASCADE
+        this.getDb().prepare('DELETE FROM albums WHERE id = ?').run(id);
+    }
+
+    getAlbums(): Album[] {
+        const rows = this.stmt(`
+            SELECT a.*, COUNT(DISTINCT ap.id) as page_count
+            FROM albums a
+            LEFT JOIN album_pages ap ON ap.album_id = a.id
+            GROUP BY a.id
+            ORDER BY a.sort_order, a.updated_at DESC
+        `).all() as any[];
+        return rows.map(r => ({ ...r, settings: r.settings ? JSON.parse(r.settings) : undefined }));
+    }
+
+    getAlbumPages(albumId: string): AlbumPage[] {
+        const pages = this.stmt(`SELECT * FROM album_pages WHERE album_id = ? ORDER BY page_index`).all(albumId) as any[];
+        const photoStmt = this.stmt(`SELECT photo_id, slot_index, crop_data FROM album_page_photos WHERE page_id = ? ORDER BY slot_index`);
+        return pages.map(p => ({
+            ...p,
+            layout_data: p.layout_data ? JSON.parse(p.layout_data) : { slots: [] },
+            photos: (photoStmt.all(p.id) as any[]).map(x => ({
+                photo_id: x.photo_id,
+                slot_index: x.slot_index,
+                crop_data: x.crop_data ? JSON.parse(x.crop_data) : undefined
+            }))
+        }));
+    }
+
+    // Full replace of an album's pages in one transaction (caller sends the full desired state).
+    saveAlbumPages(albumId: string, pages: AlbumPage[]): void {
+        const db = this.getDb();
+        const delPages = db.prepare('DELETE FROM album_pages WHERE album_id = ?');
+        const insPage = db.prepare(`INSERT INTO album_pages (id, album_id, page_index, page_kind, layout_template, layout_data) VALUES (?, ?, ?, ?, ?, ?)`);
+        const insPhoto = db.prepare(`INSERT INTO album_page_photos (page_id, photo_id, slot_index, crop_data) VALUES (?, ?, ?, ?)`);
+        db.transaction(() => {
+            delPages.run(albumId);
+            pages.forEach((pg, i) => {
+                const pid = pg.id || uuidv4();
+                insPage.run(pid, albumId, i, pg.page_kind || 'photo', pg.layout_template || 'full-bleed-1', JSON.stringify(pg.layout_data || { slots: [] }));
+                (pg.photos || []).forEach(s => insPhoto.run(pid, s.photo_id, s.slot_index, s.crop_data ? JSON.stringify(s.crop_data) : null));
+            });
+        })();
+    }
+
+    // Fetch full photo rows by id list (preserves the given order). Used by album build/export.
+    getPhotosByIds(ids: string[]): Photo[] {
+        if (!ids.length) return [];
+        const placeholders = ids.map(() => '?').join(',');
+        const rows = this.getDb().prepare(`SELECT * FROM photos WHERE id IN (${placeholders})`).all(...ids) as Photo[];
+        const byId = new Map(rows.map(r => [r.id, r]));
+        return ids.map(id => byId.get(id)).filter((p): p is Photo => !!p);
     }
 
     // ===== KEYWORD OPERATIONS =====
