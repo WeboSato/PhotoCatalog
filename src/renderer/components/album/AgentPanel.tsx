@@ -1,8 +1,14 @@
 import React from 'react';
-import { Sparkles, FileText, MonitorPlay, AlertTriangle, Loader2, CheckCircle2 } from 'lucide-react';
+import { Sparkles, FileText, MonitorPlay, AlertTriangle, Loader2, CheckCircle2, RefreshCw } from 'lucide-react';
 import { useAlbumStore } from '../../stores/albumStore';
 import { PAGE_FORMATS } from '../../services/LayoutEngine';
 import { PageFormat } from '../../../shared/albumTypes';
+
+const DENSITIES: { key: 'minimal' | 'balanced' | 'dense'; label: string }[] = [
+    { key: 'minimal', label: 'Aéré' },
+    { key: 'balanced', label: 'Équilibré' },
+    { key: 'dense', label: 'Dense' },
+];
 
 // The "mini agent" surface: narrates what the local-AI curator did, and drives export.
 export const AgentPanel: React.FC = () => {
@@ -14,6 +20,8 @@ export const AgentPanel: React.FC = () => {
     const lastExport = useAlbumStore(s => s.lastExport);
     const exportActive = useAlbumStore(s => s.exportActive);
     const clearLastExport = useAlbumStore(s => s.clearLastExport);
+    const settings = useAlbumStore(s => s.settings);
+    const regenerate = useAlbumStore(s => s.regenerate);
 
     if (!activeAlbum) {
         return (
@@ -29,6 +37,8 @@ export const AgentPanel: React.FC = () => {
 
     const fmt = PAGE_FORMATS[activeAlbum.page_format as PageFormat];
     const exporting = busy === 'exporting';
+    const building = busy === 'building';
+    const activeDensity = settings.density || 'balanced';
 
     return (
         <div className="w-72 border-l border-[#333] bg-[#111] flex flex-col">
@@ -51,6 +61,32 @@ export const AgentPanel: React.FC = () => {
                 ) : (
                     <div className="text-xs text-gray-500">—</div>
                 )}
+            </div>
+
+            {/* Re-curate controls */}
+            <div className="p-4 border-b border-[#333]">
+                <div className="text-gray-300 font-medium mb-2 text-sm">Régénérer</div>
+                <div className="flex gap-1 mb-2">
+                    {DENSITIES.map(d => (
+                        <button
+                            key={d.key}
+                            disabled={building || exporting}
+                            onClick={() => regenerate(d.key)}
+                            className={`flex-1 py-1.5 rounded text-xs border ${activeDensity === d.key ? 'border-blue-500 bg-blue-500/10 text-blue-300' : 'border-[#333] text-gray-400 hover:border-[#555]'} disabled:opacity-40`}
+                            title={`Densité : ${d.label}`}
+                        >
+                            {d.label}
+                        </button>
+                    ))}
+                </div>
+                <button
+                    disabled={building || exporting}
+                    onClick={() => regenerate(activeDensity)}
+                    className="w-full flex items-center justify-center gap-2 py-1.5 rounded bg-[#2a2a2a] hover:bg-[#333] text-gray-200 text-xs disabled:opacity-40"
+                >
+                    <RefreshCw size={13} className={building ? 'animate-spin' : ''} /> Régénérer les pages
+                </button>
+                <div className="text-[11px] text-gray-600 mt-1.5">Change la densité (photos par page). Les photos épinglées restent en vedette.</div>
             </div>
 
             {/* Progress */}

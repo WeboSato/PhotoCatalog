@@ -59,6 +59,8 @@ interface AlbumState {
     deleteAlbum: (id: string) => Promise<void>;
     removePage: (pageId: string) => Promise<void>;
     movePage: (from: number, to: number) => Promise<void>;
+    regenerate: (density: 'minimal' | 'balanced' | 'dense') => Promise<void>;
+    togglePin: (pageId: string, photoId: string) => Promise<void>;
     setProgress: (p: AlbumProgress | null) => void;
     exportActive: (mode: 'book' | 'slideshow') => Promise<AlbumExportResult | null>;
     clearLastExport: () => void;
@@ -96,6 +98,7 @@ export const useAlbumStore = create<AlbumState>((set, get) => ({
         let orderedIds: string[] = [];
         let coverId: string | undefined;
         let heroIds = new Set<string>();
+        let focals: Record<string, { x: number; y: number }> = {};
         let summary: AlbumBuildSummary;
         let agentExtra: any = null;
         try {
@@ -104,6 +107,7 @@ export const useAlbumStore = create<AlbumState>((set, get) => ({
                 orderedIds = r.orderedIds;
                 coverId = r.coverId || undefined;
                 heroIds = new Set<string>(r.heroIds || []);
+                focals = r.focals || {};
                 agentExtra = { ...r.summary, reasons: r.reasons, rejects: r.rejects };
                 summary = { keeperCount: r.summary.keeperCount, pageCount: 0, strategy: r.summary.strategy, reasons: r.reasons };
             } else {
@@ -115,7 +119,7 @@ export const useAlbumStore = create<AlbumState>((set, get) => ({
         }
 
         const keeperPhotos = orderedIds.map(id => photoMap.get(id)).filter((p): p is LayoutPhoto => !!p);
-        const pages = orderedIds.length ? packPages(keeperPhotos, heroIds, density) : fullBleedPages(orderedIds);
+        const pages = orderedIds.length ? packPages(keeperPhotos, heroIds, density, focals) : fullBleedPages(orderedIds);
         summary = { ...summary, pageCount: pages.length };
 
         const albumId = await window.api.createAlbum({
@@ -190,6 +194,58 @@ export const useAlbumStore = create<AlbumState>((set, get) => ({
     },
 
     setProgress: (p) => set({ progress: p }),
+
+    // Re-run the agent on the album's current photos with a new density, keeping
+    // pinned photos featured (forced heroes). Mostly re-flows the layout.
+    regenerate: async (density) => {
+        const { activeAlbum, pages, photosById } = get();
+        if (!activeAlbum) return;
+        const currentIds = Array.from(new Set(pages.flatMap(p => p.photos.map(s => s.photo_id))));
+        const pinnedIds = new Set(pages.flatMap(p => p.photos.filter(s => s.crop_data?.pinned).map(s => s.photo_id)));
+        if (currentIds.length === 0) return;
+
+        set({ busy: 'building', progress: { phase: 'curate', message: 'Régénération…' } });
+        let orderedIds = currentIds;
+        let heroIds = new Set<string>(pinnedIds);
+        let focals: Record<string, { x: number; y: number }> = {};
+        try {
+            const r = await window.api.autoCurateAlbum({ seedIds: currentIds, density });
+            if (r && Array.isArray(r.orderedIds) && r.orderedIds.length) {
+                orderedIds = r.orderedIds;
+                heroIds = new Set<string>([...(r.heroIds || []), ...pinnedIds]);
+                focals = r.focals || {};
+            }
+        } catch { /* keep current order */ }
+
+        // ensure pinned photos survive and lead
+        const missing = [...pinnedIds].filter(id => !orderedIds.includes(id));
+        orderedIds = [...missing, ...orderedIds];
+
+        const keeperPhotos = orderedIds.map(id => photosById.get(id)).filter((p): p is LayoutPhoto => !!p);
+        const newPages = packPages(keeperPhotos, heroIds, density, focals);
+        for (const pg of newPages) {
+            for (const s of pg.photos) {
+                if (pinnedIds.has(s.photo_id)) s.crop_data = { ...(s.crop_data || {}), pinned: true };
+            }
+        }
+        const settings = { ...get().settings, density };
+        await window.api.saveAlbumPages(activeAlbum.id, newPages);
+        await window.api.updateAlbum(activeAlbum.id, { settings });
+        const saved = await window.api.getAlbumPages(activeAlbum.id);
+        set({ pages: saved, settings, busy: 'idle', progress: null });
+    },
+
+    togglePin: async (pageId, photoId) => {
+        const { activeAlbum, pages } = get();
+        if (!activeAlbum) return;
+        const newPages = pages.map(p => p.id === pageId
+            ? { ...p, photos: p.photos.map(s => s.photo_id === photoId
+                ? { ...s, crop_data: { ...(s.crop_data || {}), pinned: !s.crop_data?.pinned } }
+                : s) }
+            : p);
+        set({ pages: newPages });
+        await window.api.saveAlbumPages(activeAlbum.id, newPages);
+    },
 
     exportActive: async (mode) => {
         const { activeAlbum, pages, photosById, settings } = get();

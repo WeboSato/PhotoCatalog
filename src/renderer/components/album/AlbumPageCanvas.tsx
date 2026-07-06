@@ -1,5 +1,5 @@
 import React from 'react';
-import { Trash2 } from 'lucide-react';
+import { Trash2, Pin } from 'lucide-react';
 import { useAlbumStore } from '../../stores/albumStore';
 import { PAGE_FORMATS, SLIDESHOW_SPEC, LayoutPhoto } from '../../services/LayoutEngine';
 import { getPreviewUrl, PLACEHOLDER_IMAGE } from '../../utils/imageUrl';
@@ -13,6 +13,7 @@ export const AlbumPageCanvas: React.FC = () => {
     const activeAlbum = useAlbumStore(s => s.activeAlbum);
     const settings = useAlbumStore(s => s.settings);
     const removePage = useAlbumStore(s => s.removePage);
+    const togglePin = useAlbumStore(s => s.togglePin);
 
     if (!activeAlbum) return null;
 
@@ -52,6 +53,10 @@ export const AlbumPageCanvas: React.FC = () => {
                                     const transform = (c.scale || c.offsetX || c.offsetY)
                                         ? `translate(${(c.offsetX || 0) * 100}%, ${(c.offsetY || 0) * 100}%) scale(${c.scale || 1})`
                                         : undefined;
+                                    // Face-aware crop: shift the cover-crop toward the faces.
+                                    const objectPosition = (c.focalX != null || c.focalY != null)
+                                        ? `${(c.focalX ?? 0.5) * 100}% ${(c.focalY ?? 0.5) * 100}%`
+                                        : undefined;
                                     return (
                                         <div
                                             key={sp.slot_index}
@@ -72,9 +77,17 @@ export const AlbumPageCanvas: React.FC = () => {
                                                     width: '100%',
                                                     height: '100%',
                                                     objectFit: slideshow ? 'contain' : 'cover',
+                                                    objectPosition,
                                                     transform,
                                                 }}
                                             />
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); togglePin(page.id, sp.photo_id); }}
+                                                title={c.pinned ? 'Désépingler' : 'Épingler (garder en vedette)'}
+                                                className={`absolute top-1.5 right-1.5 p-1 rounded-full transition-opacity ${c.pinned ? 'bg-blue-600 text-white opacity-100' : 'bg-black/50 text-white opacity-0 group-hover:opacity-100'}`}
+                                            >
+                                                <Pin size={12} fill={c.pinned ? 'currentColor' : 'none'} />
+                                            </button>
                                         </div>
                                     );
                                 })}

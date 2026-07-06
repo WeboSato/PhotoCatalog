@@ -17,6 +17,7 @@ export interface CurateResult {
     orderedIds: string[];
     coverId: string | null;
     heroIds: string[];
+    focals: Record<string, { x: number; y: number }>; // face-union center per photo (0..1)
     reasons: Record<string, string>;
     rejects: { id: string; reason: string }[];
     summary: {
@@ -97,7 +98,7 @@ class AlbumAgentService {
         }
         pool = pool.filter(p => p.flag !== 'rejected');
         if (pool.length === 0) {
-            return { orderedIds: [], coverId: null, heroIds: [], reasons: {}, rejects: [], summary: { keeperCount: 0, eventCount: 0, nearDupsRemoved: 0, peopleCovered: 0, strategy: 'Aucune photo éligible.' } };
+            return { orderedIds: [], coverId: null, heroIds: [], focals: {}, reasons: {}, rejects: [], summary: { keeperCount: 0, eventCount: 0, nearDupsRemoved: 0, peopleCovered: 0, strategy: 'Aucune photo éligible.' } };
         }
 
         // ---- Stage 1: batch-enrich ----
@@ -105,6 +106,23 @@ class AlbumAgentService {
         const ids = pool.map(p => p.id);
         const kw = catalogDb.getKeywordsForPhotos(ids);
         const faces = catalogDb.getFacesForPhotos(ids);
+
+        // Face-union focal point per photo (center of the bbox around all faces),
+        // so a cover-crop keeps heads in frame instead of guillotining them.
+        const focals: Record<string, { x: number; y: number }> = {};
+        for (const [pid, fs] of Object.entries(faces)) {
+            if (!fs.length) continue;
+            let minX = 1, minY = 1, maxX = 0, maxY = 0;
+            for (const f of fs) {
+                const [x, y, w, h] = f.box;
+                minX = Math.min(minX, x); minY = Math.min(minY, y);
+                maxX = Math.max(maxX, x + w); maxY = Math.max(maxY, y + h);
+            }
+            focals[pid] = {
+                x: Math.max(0, Math.min(1, (minX + maxX) / 2)),
+                y: Math.max(0, Math.min(1, (minY + maxY) / 2)),
+            };
+        }
 
         // ---- Stage 2: quality score ----
         const grids = new Map<string, number[] | null>();
@@ -205,6 +223,7 @@ class AlbumAgentService {
             orderedIds,
             coverId,
             heroIds,
+            focals,
             reasons,
             rejects,
             summary: {

@@ -180,8 +180,11 @@ class AlbumExportService {
                 const transform = (c.scale || c.offsetX || c.offsetY)
                     ? `transform:translate(${(c.offsetX || 0) * 100}%, ${(c.offsetY || 0) * 100}%) scale(${c.scale || 1});`
                     : '';
+                const objectPosition = (c.focalX != null || c.focalY != null)
+                    ? `object-position:${(c.focalX ?? 0.5) * 100}% ${(c.focalY ?? 0.5) * 100}%;`
+                    : '';
                 return `<div class="slot" style="left:${this.mmToCss(left)};top:${this.mmToCss(top)};width:${this.mmToCss(w)};height:${this.mmToCss(h)};">
-                    <img src="local-image://${encode(file)}" style="object-fit:${fit};${transform}"/>
+                    <img src="local-image://${encode(file)}" style="object-fit:${fit};${objectPosition}${transform}"/>
                 </div>`;
             }).join('');
 

@@ -92,7 +92,8 @@ function chooseTemplate(group: LayoutPhoto[]) {
 export function packPages(
     photos: LayoutPhoto[],
     heroIds: Set<string>,
-    density: 'minimal' | 'balanced' | 'dense' = 'balanced'
+    density: 'minimal' | 'balanced' | 'dense' = 'balanced',
+    focals?: Record<string, { x: number; y: number }>
 ): AlbumPage[] {
     const groupMax = density === 'minimal' ? 1 : density === 'dense' ? 4 : 2;
     const pages: AlbumPage[] = [];
@@ -101,7 +102,10 @@ export function packPages(
         pages.push({
             id: '', album_id: '', page_index: pages.length, page_kind: 'photo',
             layout_template: template, layout_data: { slots },
-            photos: group.map((p, idx) => ({ photo_id: p.id, slot_index: idx })),
+            photos: group.map((p, idx) => {
+                const f = focals?.[p.id];
+                return { photo_id: p.id, slot_index: idx, crop_data: f ? { focalX: f.x, focalY: f.y } : undefined };
+            }),
         });
     };
 
