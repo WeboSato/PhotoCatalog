@@ -35,6 +35,7 @@ import settingsService from './services/SettingsService';
 import catalogManagerService from './services/CatalogManagerService';
 import { updateService } from './services/UpdateService';
 import albumExportService from './services/AlbumExportService';
+import albumAgentService from './services/AlbumAgentService';
 import crypto from 'crypto';
 
 let mainWindow: BrowserWindow | null = null;
@@ -1135,6 +1136,8 @@ ipcMain.handle('albums:delete', (_, id: string) => { catalogDb.deleteAlbum(id); 
 ipcMain.handle('albums:getPages', (_, albumId: string) => catalogDb.getAlbumPages(albumId));
 ipcMain.handle('albums:savePages', (_, albumId: string, pages: any[]) => { catalogDb.saveAlbumPages(albumId, pages); return true; });
 ipcMain.handle('albums:getPhotosByIds', (_, ids: string[]) => catalogDb.getPhotosByIds(ids));
+ipcMain.handle('album:autoCurate', async (_, params: any) =>
+    albumAgentService.build(params, p => mainWindow?.webContents.send('album:progress', p)));
 
 ipcMain.handle('album:exportPdf', async (_, spec: any, savePath: string) =>
     albumExportService.exportPdf(spec, savePath, p => mainWindow?.webContents.send('album:progress', p)));

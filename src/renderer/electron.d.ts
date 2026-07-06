@@ -40,6 +40,7 @@ interface ElectronAPI {
     getAlbumPages: (id: string) => Promise<import('../shared/albumTypes').AlbumPage[]>;
     saveAlbumPages: (id: string, pages: import('../shared/albumTypes').AlbumPage[]) => Promise<boolean>;
     getPhotosByIds: (ids: string[]) => Promise<any[]>;
+    autoCurateAlbum: (params: { seedIds?: string[]; personId?: string; density?: string; minCount?: number }) => Promise<any>;
     exportAlbumPdf: (spec: import('../shared/albumTypes').AlbumRenderSpec, savePath: string) => Promise<import('../shared/albumTypes').AlbumExportResult>;
     exportAlbumSlideshow: (spec: import('../shared/albumTypes').AlbumRenderSpec, savePath: string) => Promise<import('../shared/albumTypes').AlbumExportResult>;
     onAlbumProgress: (callback: (p: import('../shared/albumTypes').AlbumProgress) => void) => () => void;

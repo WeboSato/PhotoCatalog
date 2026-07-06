@@ -43,6 +43,90 @@ export function fullBleedPages(photoIds: string[]): AlbumPage[] {
     }));
 }
 
+// ---- Multi-photo layout templates (rects within the trim box, gutter between) ----
+const G = 0.02; // gutter between photos (outer edges stay at 0/1 for bleed)
+
+function tplFull(): { x: number; y: number; w: number; h: number }[] {
+    return [{ x: 0, y: 0, w: 1, h: 1 }];
+}
+function tpl2Cols() {
+    const w = (1 - G) / 2;
+    return [{ x: 0, y: 0, w, h: 1 }, { x: (1 + G) / 2, y: 0, w, h: 1 }];
+}
+function tpl2Rows() {
+    const h = (1 - G) / 2;
+    return [{ x: 0, y: 0, w: 1, h }, { x: 0, y: (1 + G) / 2, w: 1, h }];
+}
+function tpl3HeroLeft() {
+    const leftW = 0.62;
+    const rightX = leftW + G, rightW = 1 - rightX, rh = (1 - G) / 2;
+    return [
+        { x: 0, y: 0, w: leftW, h: 1 },
+        { x: rightX, y: 0, w: rightW, h: rh },
+        { x: rightX, y: (1 + G) / 2, w: rightW, h: rh },
+    ];
+}
+function tpl4Grid() {
+    const w = (1 - G) / 2, h = (1 - G) / 2, s = (1 + G) / 2;
+    return [
+        { x: 0, y: 0, w, h }, { x: s, y: 0, w, h },
+        { x: 0, y: s, w, h }, { x: s, y: s, w, h },
+    ];
+}
+
+function chooseTemplate(group: LayoutPhoto[]) {
+    const n = group.length;
+    if (n <= 1) return { template: 'full-bleed-1', slots: tplFull() };
+    if (n === 2) {
+        const portraits = group.filter(p => effectiveAspect(p) < 1).length;
+        return portraits >= 1 ? { template: 'grid-2-cols', slots: tpl2Cols() } : { template: 'grid-2-rows', slots: tpl2Rows() };
+    }
+    if (n === 3) return { template: 'hero-3', slots: tpl3HeroLeft() };
+    return { template: 'grid-4', slots: tpl4Grid() };
+}
+
+/**
+ * Pack ordered photos into multi-photo pages. Heroes get a full-bleed page; the
+ * rest are grouped (2–4 per page by density) with an aspect-aware template.
+ */
+export function packPages(
+    photos: LayoutPhoto[],
+    heroIds: Set<string>,
+    density: 'minimal' | 'balanced' | 'dense' = 'balanced'
+): AlbumPage[] {
+    const groupMax = density === 'minimal' ? 1 : density === 'dense' ? 4 : 2;
+    const pages: AlbumPage[] = [];
+    let i = 0;
+    const push = (template: string, slots: any[], group: LayoutPhoto[]) => {
+        pages.push({
+            id: '', album_id: '', page_index: pages.length, page_kind: 'photo',
+            layout_template: template, layout_data: { slots },
+            photos: group.map((p, idx) => ({ photo_id: p.id, slot_index: idx })),
+        });
+    };
+
+    while (i < photos.length) {
+        const p = photos[i];
+        if (groupMax === 1 || heroIds.has(p.id)) {
+            push('full-bleed-1', tplFull(), [p]);
+            i += 1;
+            continue;
+        }
+        // gather a group, but stop before the next hero
+        const group: LayoutPhoto[] = [];
+        for (let k = 0; k < groupMax && i + k < photos.length; k++) {
+            const q = photos[i + k];
+            if (k > 0 && heroIds.has(q.id)) break;
+            group.push(q);
+        }
+        if (group.length === 1) { push('full-bleed-1', tplFull(), group); i += 1; continue; }
+        const { template, slots } = chooseTemplate(group);
+        push(template, slots, group);
+        i += group.length;
+    }
+    return pages;
+}
+
 // Extensions sharp/libvips can actually decode. Everything else (RAW, PSD,
 // Affinity, etc.) must fall back to the generated 2048px webp preview — the
 // `is_raw` DB flag is unreliable (e.g. .psd and .NEF are stored as is_raw=0).

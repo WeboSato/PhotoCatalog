@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { useCatalogStore, Photo } from './catalogStore';
-import { fullBleedPages, buildRenderSpec, LayoutPhoto } from '../services/LayoutEngine';
+import { fullBleedPages, packPages, buildRenderSpec, LayoutPhoto } from '../services/LayoutEngine';
 import {
     Album, AlbumPage, AlbumSettings, AlbumBuildSummary, AlbumExportResult,
     AlbumProgress, PageFormat, AlbumTargetType, DEFAULT_ALBUM_SETTINGS
@@ -87,8 +87,36 @@ export const useAlbumStore = create<AlbumState>((set, get) => ({
         if (pool.length === 0) return null;
 
         set({ busy: 'building', progress: { phase: 'curate', message: 'Sélection des photos…' } });
-        const { orderedIds, coverId, summary } = curate(pool);
         const settings = { ...DEFAULT_ALBUM_SETTINGS };
+        const density = settings.density || 'balanced';
+        const photoMap = toLayoutMap(pool);
+
+        // Ask the local-AI agent (main process) to curate; fall back to the simple
+        // deterministic ranker if it's unavailable.
+        let orderedIds: string[] = [];
+        let coverId: string | undefined;
+        let heroIds = new Set<string>();
+        let summary: AlbumBuildSummary;
+        let agentExtra: any = null;
+        try {
+            const r = await window.api.autoCurateAlbum({ seedIds: pool.map(p => p.id), density });
+            if (r && Array.isArray(r.orderedIds) && r.orderedIds.length) {
+                orderedIds = r.orderedIds;
+                coverId = r.coverId || undefined;
+                heroIds = new Set<string>(r.heroIds || []);
+                agentExtra = { ...r.summary, reasons: r.reasons, rejects: r.rejects };
+                summary = { keeperCount: r.summary.keeperCount, pageCount: 0, strategy: r.summary.strategy, reasons: r.reasons };
+            } else {
+                throw new Error('empty');
+            }
+        } catch {
+            const det = curate(pool);
+            orderedIds = det.orderedIds; coverId = det.coverId; summary = det.summary;
+        }
+
+        const keeperPhotos = orderedIds.map(id => photoMap.get(id)).filter((p): p is LayoutPhoto => !!p);
+        const pages = orderedIds.length ? packPages(keeperPhotos, heroIds, density) : fullBleedPages(orderedIds);
+        summary = { ...summary, pageCount: pages.length };
 
         const albumId = await window.api.createAlbum({
             name,
@@ -96,9 +124,9 @@ export const useAlbumStore = create<AlbumState>((set, get) => ({
             target_type: targetType,
             cover_photo_id: coverId,
             settings,
-            agent_summary: JSON.stringify(summary),
+            agent_summary: JSON.stringify({ ...summary, agent: agentExtra }),
         });
-        await window.api.saveAlbumPages(albumId, fullBleedPages(orderedIds));
+        await window.api.saveAlbumPages(albumId, pages);
 
         // Reload pages from DB so working copy has the generated page ids.
         const savedPages = await window.api.getAlbumPages(albumId);
@@ -108,7 +136,7 @@ export const useAlbumStore = create<AlbumState>((set, get) => ({
         set({
             activeAlbum: album,
             pages: savedPages,
-            photosById: toLayoutMap(pool),
+            photosById: photoMap,
             settings,
             summary,
             busy: 'idle',

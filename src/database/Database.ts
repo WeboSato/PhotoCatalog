@@ -615,6 +615,29 @@ class CatalogDatabase {
         return ids.map(id => byId.get(id)).filter((p): p is Photo => !!p);
     }
 
+    // Batch signal fetch for album auto-curation (single indexed query, not N round-trips).
+    getKeywordsForPhotos(ids: string[]): Record<string, string[]> {
+        if (!ids.length) return {};
+        const ph = ids.map(() => '?').join(',');
+        const rows = this.getDb().prepare(
+            `SELECT pk.photo_id as pid, k.name as name FROM photo_keywords pk JOIN keywords k ON k.id = pk.keyword_id WHERE pk.photo_id IN (${ph})`
+        ).all(...ids) as { pid: string; name: string }[];
+        const out: Record<string, string[]> = {};
+        for (const r of rows) (out[r.pid] ||= []).push(r.name);
+        return out;
+    }
+
+    getFacesForPhotos(ids: string[]): Record<string, { person_id: string | null; box: number[] }[]> {
+        if (!ids.length) return {};
+        const ph = ids.map(() => '?').join(',');
+        const rows = this.getDb().prepare(
+            `SELECT photo_id, person_id, box_x, box_y, box_width, box_height FROM faces WHERE photo_id IN (${ph})`
+        ).all(...ids) as any[];
+        const out: Record<string, { person_id: string | null; box: number[] }[]> = {};
+        for (const r of rows) (out[r.photo_id] ||= []).push({ person_id: r.person_id, box: [r.box_x, r.box_y, r.box_width, r.box_height] });
+        return out;
+    }
+
     // ===== KEYWORD OPERATIONS =====
 
     createKeyword(keyword: Partial<Keyword>): string {

@@ -41,6 +41,7 @@ contextBridge.exposeInMainWorld('api', {
     getAlbumPages: (id: string) => ipcRenderer.invoke('albums:getPages', id),
     saveAlbumPages: (id: string, pages: any[]) => ipcRenderer.invoke('albums:savePages', id, pages),
     getPhotosByIds: (ids: string[]) => ipcRenderer.invoke('albums:getPhotosByIds', ids),
+    autoCurateAlbum: (params: any) => ipcRenderer.invoke('album:autoCurate', params),
     exportAlbumPdf: (spec: any, savePath: string) => ipcRenderer.invoke('album:exportPdf', spec, savePath),
     exportAlbumSlideshow: (spec: any, savePath: string) => ipcRenderer.invoke('album:exportSlideshow', spec, savePath),
     onAlbumProgress: (callback: (p: any) => void) => {
@@ -294,6 +295,7 @@ export interface ElectronAPI {
     getAlbumPages: (id: string) => Promise<any[]>;
     saveAlbumPages: (id: string, pages: any[]) => Promise<boolean>;
     getPhotosByIds: (ids: string[]) => Promise<any[]>;
+    autoCurateAlbum: (params: any) => Promise<any>;
     exportAlbumPdf: (spec: any, savePath: string) => Promise<any>;
     exportAlbumSlideshow: (spec: any, savePath: string) => Promise<any>;
     onAlbumProgress: (callback: (p: any) => void) => () => void;
