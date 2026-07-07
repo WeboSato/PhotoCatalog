@@ -9,8 +9,10 @@ import { v4 as uuidv4 } from 'uuid';
 // it — collapsing everyone into one mega-cluster (measured: 18k-32k faces in one).
 // A fixed representative (the cluster's first face, never updated) has no drift.
 //
-// Threshold tuned on real data: same-person distances run up to ~0.63 (p90),
-// different people start at ~0.72, so 0.6 separates them well without collapsing.
+// Threshold. 0.6 keeps the people count low (fewer duplicate cards) at the cost of
+// occasionally grouping similar-looking different people in mid-size clusters;
+// 0.5 is purer but splits one person across a few cards. User preference: 0.6
+// (fewer cards). Tunable per call via opts.threshold.
 const DEFAULT_THRESHOLD = 0.6;
 const MIN_CLUSTER = 2; // a "person" must appear in >= 2 photos (drops singleton false-positives)
 // Faces smaller than this fraction of the image (box_width * box_height) get an
