@@ -162,6 +162,17 @@ class CatalogDatabase {
         } catch (e) {
             console.warn('[Database] Migration blur_hash check failed:', e);
         }
+
+        // Migration: Add face_crop_path column to faces if it doesn't exist
+        try {
+            const fcols = this.db!.pragma('table_info(faces)') as { name: string }[];
+            if (!fcols.some(col => col.name === 'face_crop_path')) {
+                this.db!.exec('ALTER TABLE faces ADD COLUMN face_crop_path TEXT');
+                console.log('[Database] Migration: Added face_crop_path column');
+            }
+        } catch (e) {
+            console.warn('[Database] Migration face_crop_path check failed:', e);
+        }
     }
 
     private createOptimizedIndexes(): void {
@@ -1122,10 +1133,31 @@ class CatalogDatabase {
             INSERT INTO faces (id, photo_id, person_id, box_x, box_y, box_width, box_height, descriptor, confidence)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
-            face.id, face.photo_id, face.person_id,
+            face.id, face.photo_id, face.person_id ?? null,
             face.box_x, face.box_y, face.box_width, face.box_height,
             face.descriptor, face.confidence
         );
+    }
+
+    setFaceCropPath(faceId: string, cropPath: string): void {
+        this.getDb().prepare('UPDATE faces SET face_crop_path = ? WHERE id = ?').run(cropPath, faceId);
+    }
+
+    // People-view backfill queue: only the representative faces the cards show
+    // (JOIN people on thumbnail_face_id => ~119 rows, not all faces), and only
+    // those whose photo has a decodable thumbnail so a crop source exists.
+    getFacesNeedingCrops(): {
+        id: string; photo_id: string; file_path: string; thumbnail_path: string | null;
+        box_x: number; box_y: number; box_width: number; box_height: number;
+    }[] {
+        return this.stmt(`
+            SELECT f.id, f.photo_id, f.box_x, f.box_y, f.box_width, f.box_height,
+                   p.file_path, p.thumbnail_path
+            FROM faces f
+            JOIN photos p  ON f.photo_id = p.id
+            JOIN people pe ON pe.thumbnail_face_id = f.id
+            WHERE f.face_crop_path IS NULL AND p.thumbnail_path IS NOT NULL
+        `).all() as any[];
     }
 
     assignFaceToPerson(faceId: string, personId: string, confirmed: boolean = false): void {

@@ -147,6 +147,10 @@ interface ElectronAPI {
     getFaceWithPhoto: (faceId: string) => Promise<any>;
     getPersonWithThumbnail: (personId: string) => Promise<any>;
     getPeopleWithThumbnails: () => Promise<any[]>;
+    regenerateFaceCrops: () => Promise<{ generated: number }>;
+    onFacesCropProgress: (callback: (p: { current: number; total: number; done?: boolean }) => void) => () => void;
+    reclusterFaces: () => Promise<{ peopleCreated: number; facesAssigned: number; unassigned: number; preservedNames: number }>;
+    onReclusterProgress: (callback: (p: { phase: string; current?: number; total?: number }) => void) => () => void;
 
     // Duplicate detection
     findDuplicates: () => Promise<{ hash: string; photos: any[] }[]>;

@@ -218,6 +218,18 @@ contextBridge.exposeInMainWorld('api', {
     getFaceWithPhoto: (faceId: string) => ipcRenderer.invoke('faces:getWithPhoto', faceId),
     getPersonWithThumbnail: (personId: string) => ipcRenderer.invoke('people:getWithThumbnail', personId),
     getPeopleWithThumbnails: () => ipcRenderer.invoke('people:getAllWithThumbnails'),
+    regenerateFaceCrops: () => ipcRenderer.invoke('faces:regenerateCrops'),
+    onFacesCropProgress: (callback: (p: { current: number; total: number; done?: boolean }) => void) => {
+        const handler = (_e: any, p: any) => callback(p);
+        ipcRenderer.on('faces:crop-progress', handler);
+        return () => ipcRenderer.removeListener('faces:crop-progress', handler);
+    },
+    reclusterFaces: () => ipcRenderer.invoke('faces:recluster'),
+    onReclusterProgress: (callback: (p: { phase: string; current?: number; total?: number }) => void) => {
+        const handler = (_e: any, p: any) => callback(p);
+        ipcRenderer.on('faces:recluster-progress', handler);
+        return () => ipcRenderer.removeListener('faces:recluster-progress', handler);
+    },
 
     // Duplicate detection
     findDuplicates: () => ipcRenderer.invoke('duplicates:find'),
@@ -393,6 +405,10 @@ export interface ElectronAPI {
     getFaceWithPhoto: (faceId: string) => Promise<any>;
     getPersonWithThumbnail: (personId: string) => Promise<any>;
     getPeopleWithThumbnails: () => Promise<any[]>;
+    regenerateFaceCrops: () => Promise<{ generated: number }>;
+    onFacesCropProgress: (callback: (p: { current: number; total: number; done?: boolean }) => void) => () => void;
+    reclusterFaces: () => Promise<{ peopleCreated: number; facesAssigned: number; unassigned: number; preservedNames: number }>;
+    onReclusterProgress: (callback: (p: { phase: string; current?: number; total?: number }) => void) => () => void;
 
     // Duplicate detection
     findDuplicates: () => Promise<{ hash: string; photos: any[] }[]>;

@@ -303,6 +303,9 @@ CREATE TABLE IF NOT EXISTS faces (
     -- Confidence score
     confidence REAL DEFAULT 0,
 
+    -- Pre-generated square face-crop image (people view)
+    face_crop_path TEXT,
+
     -- Status
     is_confirmed INTEGER DEFAULT 0, -- User confirmed this identification
 

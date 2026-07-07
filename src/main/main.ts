@@ -36,6 +36,7 @@ import catalogManagerService from './services/CatalogManagerService';
 import { updateService } from './services/UpdateService';
 import albumExportService from './services/AlbumExportService';
 import albumAgentService from './services/AlbumAgentService';
+import { reclusterAllFaces } from '../services/FaceClusteringService';
 import crypto from 'crypto';
 
 let mainWindow: BrowserWindow | null = null;
@@ -754,6 +755,17 @@ app.whenReady().then(async () => {
 
             mainWindow?.webContents.send('thumbnails:progress', { current: 0, total: 0, done: true });
             mainWindow?.webContents.send('photos:refresh');
+        }
+
+        // Background: square face crops for people-view representatives (idempotent).
+        // Runs BEFORE AI tagging so the people view gets tight crops promptly rather
+        // than waiting behind a potentially long tagging pass. Thumbnails already
+        // exist (regenerated just above), which is all the crop source needs.
+        try {
+            const res = await backfillFaceCrops();
+            if (res.generated > 0) console.log(`[FaceCrop] Backfilled ${res.generated} face crops`);
+        } catch (e) {
+            console.warn('[FaceCrop] Backfill skipped:', e);
         }
 
         // Auto AI tagging for photos without keywords (background, low priority)
@@ -2168,7 +2180,7 @@ ipcMain.handle('faces:delete', (_, faceId: string) => {
 });
 
 // Face clustering - groups similar unassigned faces into person entries
-ipcMain.handle('faces:cluster', () => {
+ipcMain.handle('faces:cluster', async () => {
     console.log('[Clustering] Starting face clustering...');
 
     // Get all unassigned faces with descriptors
@@ -2235,8 +2247,26 @@ ipcMain.handle('faces:cluster', () => {
         // Assign all faces in the cluster to this person
         catalogDb.bulkAssignFacesToPerson(cluster.faceIds, personId);
 
-        // Set the first face (highest confidence) as the thumbnail
-        catalogDb.updatePersonThumbnail(personId, cluster.faceIds[0]);
+        // Pick the LARGEST-box face as representative (faceIds[0] is max-confidence,
+        // which often picks a tiny/edge face) and generate its square crop now.
+        let repId = cluster.faceIds[0];
+        let bestArea = -1;
+        for (const fid of cluster.faceIds) {
+            const fr = catalogDb.getFaceWithPhoto(fid);
+            const area = (fr?.box_width || 0) * (fr?.box_height || 0);
+            if (area > bestArea) { bestArea = area; repId = fid; }
+        }
+        catalogDb.updatePersonThumbnail(personId, repId);
+
+        const rep = catalogDb.getFaceWithPhoto(repId);
+        if (rep?.file_path) {
+            const src = thumbnailService.getPreviewPath(rep.file_path)
+                ?? thumbnailService.getThumbnailPath(rep.file_path);
+            if (src) {
+                const out = await thumbnailService.generateFaceCrop(src, repId, rep);
+                if (out) catalogDb.setFaceCropPath(repId, out);
+            }
+        }
 
         facesAssigned += cluster.faceIds.length;
     }
@@ -2244,6 +2274,39 @@ ipcMain.handle('faces:cluster', () => {
     console.log(`[Clustering] Complete: ${clusters.length} people created, ${facesAssigned} faces assigned`);
 
     return { clustersCreated: clusters.length, facesAssigned };
+});
+
+// Generate square face crops for the ~representative faces the people view shows.
+// Non-blocking: batched with yields, crops from a DECODABLE webp (never raw).
+async function backfillFaceCrops(batchSize = 3): Promise<{ generated: number }> {
+    const rows = catalogDb.getFacesNeedingCrops();
+    let generated = 0;
+    for (let i = 0; i < rows.length; i += batchSize) {
+        const batch = rows.slice(i, i + batchSize);
+        await Promise.all(batch.map(async (r) => {
+            const src = thumbnailService.getPreviewPath(r.file_path)
+                ?? thumbnailService.getThumbnailPath(r.file_path)
+                ?? (r.thumbnail_path && fs.existsSync(r.thumbnail_path) ? r.thumbnail_path : null);
+            if (!src) return;
+            const out = await thumbnailService.generateFaceCrop(src, r.id, r);
+            if (out) { catalogDb.setFaceCropPath(r.id, out); generated++; }
+        }));
+        await new Promise(res => setTimeout(res, 50)); // yield
+        mainWindow?.webContents.send('faces:crop-progress', {
+            current: Math.min(i + batchSize, rows.length), total: rows.length
+        });
+    }
+    mainWindow?.webContents.send('faces:crop-progress', { current: 0, total: 0, done: true });
+    return { generated };
+}
+
+ipcMain.handle('faces:regenerateCrops', () => backfillFaceCrops());
+
+// Improved full re-clustering (centroid-based, merges, preserves renamed people).
+ipcMain.handle('faces:recluster', async () => {
+    return reclusterAllFaces(catalogDb, thumbnailService, (p) => {
+        mainWindow?.webContents.send('faces:recluster-progress', p);
+    });
 });
 
 // Get face statistics

@@ -58,6 +58,7 @@ class ThumbnailService {
     private cacheDir: string = '';
     private thumbnailDir: string = '';
     private previewDir: string = '';
+    private faceCropDir: string = '';
     private useLightroomStructure: boolean = false;
 
     initialize(customCacheDir?: string, lightroomStyle: boolean = false): void {
@@ -86,6 +87,10 @@ class ThumbnailService {
             fs.mkdirSync(this.previewDir, { recursive: true });
             safeLog(`[ThumbnailService] Initialized at ${this.cacheDir}`);
         }
+
+        // Square face crops for the people view (Layer 2).
+        this.faceCropDir = path.join(this.cacheDir, 'faces');
+        fs.mkdirSync(this.faceCropDir, { recursive: true });
     }
 
     private getHashedPath(filePath: string): string {
@@ -522,6 +527,7 @@ class ThumbnailService {
             fs.rmSync(this.cacheDir, { recursive: true, force: true });
             fs.mkdirSync(this.thumbnailDir, { recursive: true });
             fs.mkdirSync(this.previewDir, { recursive: true });
+            fs.mkdirSync(this.faceCropDir, { recursive: true });
             safeLog('[ThumbnailService] All thumbnails cleared');
         } catch (error) {
             safeError('[ThumbnailService] Error clearing thumbnails:', error);
@@ -583,6 +589,69 @@ class ThumbnailService {
         }
 
         await pipeline.toFile(outputPath);
+    }
+
+    getFaceCropDir(): string {
+        return this.faceCropDir;
+    }
+
+    getFaceCropPath(faceId: string): string {
+        // faceId is the faces PK — stable, so a representative change just points
+        // at an already-generated file.
+        return path.join(this.faceCropDir, `${faceId}.webp`);
+    }
+
+    /**
+     * Generate a square, tightly-cropped face image.
+     * sourceWebpPath MUST be a decodable webp (2048 _pv preview or 512 thumb),
+     * NEVER the raw/.nef/.psd original — those are the blank-card root cause.
+     * The 0..1 box was measured on the .rotate()-baked thumbnail and the 512/2048
+     * webps are written post-.rotate(), so pixels are upright and the box maps 1:1
+     * — read metadata WITHOUT another .rotate().
+     */
+    async generateFaceCrop(
+        sourceWebpPath: string,
+        faceId: string,
+        box: { box_x: number; box_y: number; box_width: number; box_height: number },
+        opts: { margin?: number; size?: number; force?: boolean } = {}
+    ): Promise<string | null> {
+        const { margin = 0.6, size = 512, force = false } = opts;
+        const out = this.getFaceCropPath(faceId);
+        try {
+            if (!force) {
+                const done = await fs.promises.access(out, fs.constants.F_OK).then(() => true).catch(() => false);
+                if (done) return out; // idempotent
+            }
+            if (!fs.existsSync(sourceWebpPath)) return null;
+
+            const meta = await sharp(sourceWebpPath).metadata(); // NO .rotate()
+            const W = meta.width || 0, H = meta.height || 0;
+            if (!W || !H) return null;
+
+            const cx = (box.box_x + box.box_width / 2) * W;
+            const cy = (box.box_y + box.box_height / 2) * H;
+
+            // square side = larger face dim + margin (hair/chin room); guard tiny boxes
+            const s = Math.round(Math.max(box.box_width * W, box.box_height * H) * (1 + margin));
+            const side = Math.max(1, Math.min(s, W, H)); // never exceed image; never 0
+
+            let left = Math.round(cx - side / 2);
+            let top = Math.round(cy - side / 2);
+            left = Math.max(0, Math.min(left, W - side)); // clamp INTO [0, dim-side]
+            top = Math.max(0, Math.min(top, H - side));
+
+            await sharp(sourceWebpPath)
+                .extract({ left, top, width: side, height: side })
+                .resize(size, size, { fit: 'cover' })
+                .webp({ quality: 85 })
+                .toFile(out);
+            return out;
+        } catch (e: any) {
+            // The clamp prevents 'extract_area: bad extract area', but one bad face
+            // must never abort a batch.
+            safeError(`[ThumbnailService] generateFaceCrop failed for ${sourceWebpPath}:`, e?.message);
+            return null;
+        }
     }
 }
 
