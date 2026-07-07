@@ -149,6 +149,15 @@ const App: React.FC = () => {
 
     // Menu event listeners - use refs to avoid re-creating handlers
     useEffect(() => {
+        // Electron single-key menu accelerators (G/E/N views, 0-9 ratings/colors,
+        // P/U/X flags, Delete) fire even while typing in a text field — which made
+        // typing an album name (a "g", say) silently switch views and close the
+        // dialog. Ignore these menu events whenever a text field is focused.
+        const isTypingInField = () => {
+            const el = document.activeElement as HTMLElement | null;
+            const tag = el?.tagName?.toLowerCase();
+            return tag === 'input' || tag === 'textarea' || !!el?.isContentEditable;
+        };
         const unsubscribers = [
             window.api.onMenuNewCatalog(() => {
                 setNewCatalogDialogOpen(true);
@@ -192,24 +201,28 @@ const App: React.FC = () => {
                 }
             }),
             window.api.onPhotoRating((rating) => {
+                if (isTypingInField()) return;
                 const { selectedPhotoIds, setSelectedRating } = useCatalogStore.getState();
                 if (selectedPhotoIds.size > 0) {
                     setSelectedRating(rating);
                 }
             }),
             window.api.onPhotoFlag((flag) => {
+                if (isTypingInField()) return;
                 const { selectedPhotoIds, setSelectedFlag } = useCatalogStore.getState();
                 if (selectedPhotoIds.size > 0) {
                     setSelectedFlag(flag as any);
                 }
             }),
             window.api.onPhotoColor((color) => {
+                if (isTypingInField()) return;
                 const { selectedPhotoIds, setSelectedColorLabel } = useCatalogStore.getState();
                 if (selectedPhotoIds.size > 0) {
                     setSelectedColorLabel(color as any);
                 }
             }),
             window.api.onViewMode((mode) => {
+                if (isTypingInField()) return;
                 getStoreActions().setViewMode(mode as any);
             }),
             window.api.onLanguageChange((language) => {

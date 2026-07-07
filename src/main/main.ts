@@ -323,30 +323,33 @@ function createMenu(): void {
             submenu: [
                 {
                     label: 'Set Rating',
+                    // No single-key accelerators here: they fire even while typing in a
+                    // text field (e.g. an album name). The renderer handles 0-9 / P/U/X /
+                    // G/E/N via a guarded keydown listener instead.
                     submenu: [
-                        { label: 'No Rating', accelerator: '0', click: () => mainWindow?.webContents.send('photo:rating', 0) },
-                        { label: '1 Star', accelerator: '1', click: () => mainWindow?.webContents.send('photo:rating', 1) },
-                        { label: '2 Stars', accelerator: '2', click: () => mainWindow?.webContents.send('photo:rating', 2) },
-                        { label: '3 Stars', accelerator: '3', click: () => mainWindow?.webContents.send('photo:rating', 3) },
-                        { label: '4 Stars', accelerator: '4', click: () => mainWindow?.webContents.send('photo:rating', 4) },
-                        { label: '5 Stars', accelerator: '5', click: () => mainWindow?.webContents.send('photo:rating', 5) }
+                        { label: 'No Rating (0)', click: () => mainWindow?.webContents.send('photo:rating', 0) },
+                        { label: '1 Star (1)', click: () => mainWindow?.webContents.send('photo:rating', 1) },
+                        { label: '2 Stars (2)', click: () => mainWindow?.webContents.send('photo:rating', 2) },
+                        { label: '3 Stars (3)', click: () => mainWindow?.webContents.send('photo:rating', 3) },
+                        { label: '4 Stars (4)', click: () => mainWindow?.webContents.send('photo:rating', 4) },
+                        { label: '5 Stars (5)', click: () => mainWindow?.webContents.send('photo:rating', 5) }
                     ]
                 },
                 {
                     label: 'Set Flag',
                     submenu: [
-                        { label: 'Picked', accelerator: 'P', click: () => mainWindow?.webContents.send('photo:flag', 'picked') },
-                        { label: 'Unflagged', accelerator: 'U', click: () => mainWindow?.webContents.send('photo:flag', 'none') },
-                        { label: 'Rejected', accelerator: 'X', click: () => mainWindow?.webContents.send('photo:flag', 'rejected') }
+                        { label: 'Picked (P)', click: () => mainWindow?.webContents.send('photo:flag', 'picked') },
+                        { label: 'Unflagged (U)', click: () => mainWindow?.webContents.send('photo:flag', 'none') },
+                        { label: 'Rejected (X)', click: () => mainWindow?.webContents.send('photo:flag', 'rejected') }
                     ]
                 },
                 {
                     label: 'Set Color Label',
                     submenu: [
-                        { label: 'None', accelerator: '6', click: () => mainWindow?.webContents.send('photo:color', 'none') },
-                        { label: 'Red', accelerator: '7', click: () => mainWindow?.webContents.send('photo:color', 'red') },
-                        { label: 'Yellow', accelerator: '8', click: () => mainWindow?.webContents.send('photo:color', 'yellow') },
-                        { label: 'Green', accelerator: '9', click: () => mainWindow?.webContents.send('photo:color', 'green') },
+                        { label: 'None (6)', click: () => mainWindow?.webContents.send('photo:color', 'none') },
+                        { label: 'Red (7)', click: () => mainWindow?.webContents.send('photo:color', 'red') },
+                        { label: 'Yellow (8)', click: () => mainWindow?.webContents.send('photo:color', 'yellow') },
+                        { label: 'Green (9)', click: () => mainWindow?.webContents.send('photo:color', 'green') },
                         { label: 'Blue', click: () => mainWindow?.webContents.send('photo:color', 'blue') },
                         { label: 'Purple', click: () => mainWindow?.webContents.send('photo:color', 'purple') }
                     ]
@@ -363,18 +366,15 @@ function createMenu(): void {
             label: 'View',
             submenu: [
                 {
-                    label: 'Grid View',
-                    accelerator: 'G',
+                    label: 'Grid View (G)',
                     click: () => mainWindow?.webContents.send('view:mode', 'grid')
                 },
                 {
-                    label: 'Loupe View',
-                    accelerator: 'E',
+                    label: 'Loupe View (E)',
                     click: () => mainWindow?.webContents.send('view:mode', 'loupe')
                 },
                 {
-                    label: 'Rating',
-                    accelerator: 'N',
+                    label: 'Rating (N)',
                     click: () => mainWindow?.webContents.send('view:mode', 'survey')
                 },
                 { type: 'separator' },
