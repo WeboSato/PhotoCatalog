@@ -13,10 +13,16 @@ import { v4 as uuidv4 } from 'uuid';
 // different people start at ~0.72, so 0.6 separates them well without collapsing.
 const DEFAULT_THRESHOLD = 0.6;
 const MIN_CLUSTER = 2; // a "person" must appear in >= 2 photos (drops singleton false-positives)
+// Faces smaller than this fraction of the image (box_width * box_height) get an
+// unreliable 128-d descriptor (a ~15px crowd/stage face) that bridges different
+// people together — measured: the "intruders" in a mixed person were ~0.3% area
+// vs ~6.5% for the real faces. Below this, leave the face unassigned.
+const DEFAULT_MIN_FACE_AREA = 0.012;
 
 export interface ReclusterOptions {
     threshold?: number;
     minCluster?: number;
+    minFaceArea?: number;
 }
 
 interface FaceRow {
@@ -63,6 +69,7 @@ export async function reclusterAllFaces(
 ): Promise<ReclusterResult> {
     const THRESHOLD = opts.threshold ?? DEFAULT_THRESHOLD;
     const minCluster = opts.minCluster ?? MIN_CLUSTER;
+    const minFaceArea = opts.minFaceArea ?? DEFAULT_MIN_FACE_AREA;
     const db = catalogDb.getDb();
     onProgress?.({ phase: 'loading' });
 
@@ -73,7 +80,10 @@ export async function reclusterAllFaces(
     `).all() as any[];
 
     const faces: FaceRow[] = [];
+    let tooSmall = 0;
     for (const r of rows) {
+        // Skip faces too small to have a reliable descriptor (they cross-contaminate).
+        if ((r.box_width || 0) * (r.box_height || 0) < minFaceArea) { tooSmall++; continue; }
         try {
             const d = JSON.parse(r.descriptor);
             if (Array.isArray(d) && d.length >= 64) {
