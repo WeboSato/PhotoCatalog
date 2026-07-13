@@ -53,7 +53,7 @@ interface AlbumState {
     lastExport: AlbumExportResult | null;
 
     loadAlbums: () => Promise<void>;
-    buildFromSelection: (name: string, format: PageFormat, targetType: AlbumTargetType) => Promise<string | null>;
+    buildFromSelection: (name: string, format: PageFormat, targetType: AlbumTargetType, theme?: string) => Promise<string | null>;
     openAlbum: (id: string) => Promise<void>;
     closeAlbum: () => void;
     deleteAlbum: (id: string) => Promise<void>;
@@ -82,7 +82,7 @@ export const useAlbumStore = create<AlbumState>((set, get) => ({
         set({ albums });
     },
 
-    buildFromSelection: async (name, format, targetType) => {
+    buildFromSelection: async (name, format, targetType, theme = 'all') => {
         // Read selection/photos ONCE from the grid store (no selectPhoto side-effects).
         const { photos, selectedPhotoIds } = useCatalogStore.getState();
         const pool = selectedPhotoIds.size > 0 ? photos.filter(p => selectedPhotoIds.has(p.id)) : photos;
@@ -102,7 +102,7 @@ export const useAlbumStore = create<AlbumState>((set, get) => ({
         let summary: AlbumBuildSummary;
         let agentExtra: any = null;
         try {
-            const r = await window.api.autoCurateAlbum({ seedIds: pool.map(p => p.id), density });
+            const r = await window.api.autoCurateAlbum({ seedIds: pool.map(p => p.id), density, theme });
             if (r && Array.isArray(r.orderedIds) && r.orderedIds.length) {
                 orderedIds = r.orderedIds;
                 coverId = r.coverId || undefined;

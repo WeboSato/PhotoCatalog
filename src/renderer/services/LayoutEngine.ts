@@ -43,51 +43,63 @@ export function fullBleedPages(photoIds: string[]): AlbumPage[] {
     }));
 }
 
-// ---- Multi-photo layout templates (rects within the trim box, gutter between) ----
-const G = 0.02; // gutter between photos (outer edges stay at 0/1 for bleed)
+// ---- Layout templates ----
+// Editorial, airy layouts: photos sit inside a generous white margin (M) with
+// wide gutters (G), so pages breathe. Only heroes go edge-to-edge (full-bleed).
+const M = 0.09; // page margin -> white space around the content
+const G = 0.05; // gutter between photos
 
 function tplFull(): { x: number; y: number; w: number; h: number }[] {
-    return [{ x: 0, y: 0, w: 1, h: 1 }];
+    return [{ x: 0, y: 0, w: 1, h: 1 }]; // hero, edge to edge
 }
-function tpl2Cols() {
-    const w = (1 - G) / 2;
-    return [{ x: 0, y: 0, w, h: 1 }, { x: (1 + G) / 2, y: 0, w, h: 1 }];
+// Single photo matted inside the margin (lots of white space).
+function tplMat() {
+    return [{ x: M, y: M, w: 1 - 2 * M, h: 1 - 2 * M }];
 }
-function tpl2Rows() {
-    const h = (1 - G) / 2;
-    return [{ x: 0, y: 0, w: 1, h }, { x: 0, y: (1 + G) / 2, w: 1, h }];
-}
-function tpl3HeroLeft() {
-    const leftW = 0.62;
-    const rightX = leftW + G, rightW = 1 - rightX, rh = (1 - G) / 2;
+// Two photos side by side, inside the margin, with a wide gutter.
+function tplDuoCols() {
+    const colW = (1 - 2 * M - G) / 2;
     return [
-        { x: 0, y: 0, w: leftW, h: 1 },
-        { x: rightX, y: 0, w: rightW, h: rh },
-        { x: rightX, y: (1 + G) / 2, w: rightW, h: rh },
+        { x: M, y: M, w: colW, h: 1 - 2 * M },
+        { x: M + colW + G, y: M, w: colW, h: 1 - 2 * M },
     ];
 }
-function tpl4Grid() {
-    const w = (1 - G) / 2, h = (1 - G) / 2, s = (1 + G) / 2;
+// Two photos stacked, inside the margin.
+function tplDuoRows() {
+    const rowH = (1 - 2 * M - G) / 2;
     return [
-        { x: 0, y: 0, w, h }, { x: s, y: 0, w, h },
-        { x: 0, y: s, w, h }, { x: s, y: s, w, h },
+        { x: M, y: M, w: 1 - 2 * M, h: rowH },
+        { x: M, y: M + rowH + G, w: 1 - 2 * M, h: rowH },
+    ];
+}
+// One large + two small, inside the margin (used only at "dense").
+function tplTrio() {
+    const bigW = (1 - 2 * M) * 0.6;
+    const smallX = M + bigW + G, smallW = 1 - M - smallX, smallH = (1 - 2 * M - G) / 2;
+    return [
+        { x: M, y: M, w: bigW, h: 1 - 2 * M },
+        { x: smallX, y: M, w: smallW, h: smallH },
+        { x: smallX, y: M + smallH + G, w: smallW, h: smallH },
     ];
 }
 
 function chooseTemplate(group: LayoutPhoto[]) {
     const n = group.length;
-    if (n <= 1) return { template: 'full-bleed-1', slots: tplFull() };
+    if (n <= 1) return { template: 'mat-1', slots: tplMat() };
     if (n === 2) {
         const portraits = group.filter(p => effectiveAspect(p) < 1).length;
-        return portraits >= 1 ? { template: 'grid-2-cols', slots: tpl2Cols() } : { template: 'grid-2-rows', slots: tpl2Rows() };
+        return portraits >= 1 ? { template: 'duo-cols', slots: tplDuoCols() } : { template: 'duo-rows', slots: tplDuoRows() };
     }
-    if (n === 3) return { template: 'hero-3', slots: tpl3HeroLeft() };
-    return { template: 'grid-4', slots: tpl4Grid() };
+    return { template: 'trio', slots: tplTrio() };
 }
 
 /**
- * Pack ordered photos into multi-photo pages. Heroes get a full-bleed page; the
- * rest are grouped (2–4 per page by density) with an aspect-aware template.
+ * Pack ordered photos into pages. Airy by default: heroes get an edge-to-edge
+ * full-bleed page, everything else is a single MATTED photo (white space). Denser
+ * modes add duos / trios but still inside a margin.
+ *   minimal  -> every photo matted single (max white space, no full-bleed)
+ *   balanced -> heroes full-bleed, the rest matted single
+ *   dense    -> heroes full-bleed, the rest paired (duos), occasional trio
  */
 export function packPages(
     photos: LayoutPhoto[],
@@ -95,7 +107,7 @@ export function packPages(
     density: 'minimal' | 'balanced' | 'dense' = 'balanced',
     focals?: Record<string, { x: number; y: number }>
 ): AlbumPage[] {
-    const groupMax = density === 'minimal' ? 1 : density === 'dense' ? 4 : 2;
+    const groupMax = density === 'dense' ? 3 : 1;
     const pages: AlbumPage[] = [];
     let i = 0;
     const push = (template: string, slots: any[], group: LayoutPhoto[]) => {
@@ -111,19 +123,25 @@ export function packPages(
 
     while (i < photos.length) {
         const p = photos[i];
-        if (groupMax === 1 || heroIds.has(p.id)) {
+        // Heroes are edge-to-edge (except in 'minimal', which keeps everything matted).
+        if (density !== 'minimal' && heroIds.has(p.id)) {
             push('full-bleed-1', tplFull(), [p]);
             i += 1;
             continue;
         }
-        // gather a group, but stop before the next hero
+        if (groupMax === 1) {
+            push('mat-1', tplMat(), [p]);
+            i += 1;
+            continue;
+        }
+        // dense: gather up to 3, but stop before the next hero
         const group: LayoutPhoto[] = [];
         for (let k = 0; k < groupMax && i + k < photos.length; k++) {
             const q = photos[i + k];
             if (k > 0 && heroIds.has(q.id)) break;
             group.push(q);
         }
-        if (group.length === 1) { push('full-bleed-1', tplFull(), group); i += 1; continue; }
+        if (group.length === 1) { push('mat-1', tplMat(), group); i += 1; continue; }
         const { template, slots } = chooseTemplate(group);
         push(template, slots, group);
         i += group.length;

@@ -16,12 +16,21 @@ export const AlbumCreationModal: React.FC<{ onClose: () => void }> = ({ onClose 
     const [name, setName] = useState('Nouvel album');
     const [format, setFormat] = useState<PageFormat>('4x6');
     const [target, setTarget] = useState<AlbumTargetType>('book');
+    const [theme, setTheme] = useState('all');
 
     const usingSelection = selectedCount > 0;
     const sourceCount = usingSelection ? selectedCount : totalInGrid;
 
+    const THEMES = [
+        { key: 'all', label: 'Tout' },
+        { key: 'famille', label: 'Famille' },
+        { key: 'spectacle', label: 'Spectacle' },
+        { key: 'voyage', label: 'Voyage' },
+        { key: 'portraits', label: 'Portraits' },
+    ];
+
     const handleCreate = async () => {
-        const id = await buildFromSelection(name.trim() || 'Nouvel album', format, target);
+        const id = await buildFromSelection(name.trim() || 'Nouvel album', format, target, theme);
         if (id) onClose();
     };
 
@@ -58,6 +67,22 @@ export const AlbumCreationModal: React.FC<{ onClose: () => void }> = ({ onClose 
                             onFocus={e => e.target.select()}
                             className="w-full bg-[#0f0f0f] border border-[#333] rounded px-3 py-2 text-sm text-gray-200 focus:border-white/40 outline-none"
                         />
+                    </div>
+
+                    <div>
+                        <label className="block text-xs text-gray-500 mb-2">Sujet</label>
+                        <div className="flex flex-wrap gap-2">
+                            {THEMES.map(t => (
+                                <button
+                                    key={t.key}
+                                    onClick={() => setTheme(t.key)}
+                                    className={`px-3 py-1.5 rounded-full border text-xs ${theme === t.key ? 'border-white/30 bg-white/10 text-white' : 'border-[#333] text-gray-400 hover:border-[#555]'}`}
+                                >
+                                    {t.label}
+                                </button>
+                            ))}
+                        </div>
+                        <div className="text-[11px] text-gray-600 mt-1">L'assistant ne garde que les photos qui correspondent au sujet (personnes pour Famille, scène pour Spectacle, lieux/GPS pour Voyage…).</div>
                     </div>
 
                     <div>

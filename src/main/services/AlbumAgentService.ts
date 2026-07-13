@@ -11,6 +11,37 @@ export interface CurateParams {
     personId?: string;
     density?: 'minimal' | 'balanced' | 'dense';
     minCount?: number;
+    theme?: AlbumTheme;
+}
+
+export type AlbumTheme = 'all' | 'famille' | 'spectacle' | 'voyage' | 'portraits' | 'evenement';
+
+// Keyword hints per theme (matched loosely, EN + FR — AI tags may be either).
+const THEME_WORDS: Record<string, string[]> = {
+    spectacle: ['concert', 'stage', 'performance', 'danc', 'singer', 'music', 'theat', 'spectacle', 'scène', 'scene', 'chanteur', 'musique', 'théâtre', 'band', 'guitar', 'microphone', 'show', 'festival', 'opera', 'ballet', 'crowd', 'audience', 'light', 'dance'],
+    voyage: ['travel', 'voyage', 'landscape', 'mountain', 'beach', 'sea', 'ocean', 'city', 'building', 'nature', 'sky', 'water', 'forest', 'lake', 'river', 'sunset', 'architecture', 'street', 'monument', 'paysage', 'montagne', 'plage', 'mer', 'ville', 'ciel', 'snow', 'road'],
+};
+
+function themeLabel(t: AlbumTheme): string {
+    return { all: 'Tout', famille: 'Famille', spectacle: 'Spectacle', voyage: 'Voyage', portraits: 'Portraits', evenement: 'Événement' }[t] || t;
+}
+
+function matchesTheme(
+    theme: AlbumTheme,
+    p: any,
+    keywords: string[],
+    faces: { person_id: string | null; box: number[] }[]
+): boolean {
+    const kw = keywords.map(k => k.toLowerCase());
+    const hasWord = (set: string[]) => kw.some(k => set.some(s => k.includes(s)));
+    const maxFaceArea = faces.reduce((m, f) => Math.max(m, (f.box[2] || 0) * (f.box[3] || 0)), 0);
+    switch (theme) {
+        case 'famille': return faces.length >= 1;                    // people present
+        case 'portraits': return faces.length >= 1 && maxFaceArea >= 0.03; // a real, sizeable face
+        case 'spectacle': return hasWord(THEME_WORDS.spectacle);
+        case 'voyage': return (p.gps_latitude != null) || hasWord(THEME_WORDS.voyage);
+        default: return true; // 'all' / 'evenement' -> no filter
+    }
 }
 
 export interface CurateResult {
@@ -103,9 +134,25 @@ class AlbumAgentService {
 
         // ---- Stage 1: batch-enrich ----
         onProgress?.({ phase: 'curate', message: 'Lecture des métadonnées…' });
-        const ids = pool.map(p => p.id);
+        let ids = pool.map(p => p.id);
         const kw = catalogDb.getKeywordsForPhotos(ids);
         const faces = catalogDb.getFacesForPhotos(ids);
+
+        // ---- Theme/subject filter (the "intelligent" part) ----
+        // Keep only photos that fit the chosen subject (people for Famille, stage
+        // keywords for Spectacle, GPS/landscape for Voyage, sizeable faces for
+        // Portraits). Falls back to the full pool if too few match, so an album is
+        // never accidentally emptied.
+        const theme = params.theme || 'all';
+        let themeKept = pool.length;
+        if (theme !== 'all' && theme !== 'evenement') {
+            const filtered = pool.filter(p => matchesTheme(theme, p, kw[p.id] || [], faces[p.id] || []));
+            if (filtered.length >= 3) {
+                pool = filtered;
+                ids = pool.map(p => p.id);
+                themeKept = filtered.length;
+            }
+        }
 
         // Face-union focal point per photo (center of the bbox around all faces),
         // so a cover-crop keeps heads in frame instead of guillotining them.
@@ -231,7 +278,9 @@ class AlbumAgentService {
                 eventCount: buckets.length,
                 nearDupsRemoved,
                 peopleCovered: peopleSeen.size,
-                strategy: `Regroupé en ${buckets.length} événement(s), ordonné par date, meilleures photos en pleine page.`,
+                strategy: (theme !== 'all' && theme !== 'evenement')
+                    ? `Sujet « ${themeLabel(theme)} » : ${themeKept} photos retenues, regroupées en ${buckets.length} événement(s).`
+                    : `Regroupé en ${buckets.length} événement(s), ordonné par date, mises en page aérées.`,
             },
         };
     }
