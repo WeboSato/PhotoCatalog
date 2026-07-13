@@ -175,7 +175,9 @@ class AlbumExportService {
                     if (r.x + r.w >= 0.9999) { w += bleedMm; }
                     if (r.y + r.h >= 0.9999) { h += bleedMm; }
                 }
-                const fit = slideshow ? 'contain' : 'cover';
+                // Full-bleed single-photo pages: "contain" shows portrait AND landscape
+                // photos in full (portrait fills, landscape letterboxes) instead of cropping.
+                const fit = (slideshow || page.slots.length === 1) ? 'contain' : 'cover';
                 const c = slot.cropData || {};
                 const transform = (c.scale || c.offsetX || c.offsetY)
                     ? `transform:translate(${(c.offsetX || 0) * 100}%, ${(c.offsetY || 0) * 100}%) scale(${c.scale || 1});`

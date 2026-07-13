@@ -30,6 +30,9 @@ export const AlbumCreationModal: React.FC<{ onClose: () => void }> = ({ onClose 
             <div
                 className="glass-strong rounded-xl shadow-2xl w-[560px] max-w-[92vw] max-h-[90vh] overflow-auto"
                 onClick={e => e.stopPropagation()}
+                // Keep keystrokes inside the dialog — otherwise the app's global
+                // g/e/n/… shortcuts fire and switch views, closing the dialog.
+                onKeyDown={e => e.stopPropagation()}
             >
                 <div className="flex items-center justify-between px-5 py-3 border-b border-[#333]">
                     <div className="flex items-center gap-2 text-gray-100">
@@ -51,6 +54,8 @@ export const AlbumCreationModal: React.FC<{ onClose: () => void }> = ({ onClose 
                         <input
                             value={name}
                             onChange={e => setName(e.target.value)}
+                            autoFocus
+                            onFocus={e => e.target.select()}
                             className="w-full bg-[#0f0f0f] border border-[#333] rounded px-3 py-2 text-sm text-gray-200 focus:border-white/40 outline-none"
                         />
                     </div>

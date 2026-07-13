@@ -40,6 +40,10 @@ export const AlbumPageCanvas: React.FC = () => {
         }
         const slots = page.layout_data?.slots || [];
         const idx = pages.indexOf(page);
+        // Full-bleed single-photo pages use "contain" so BOTH portrait and landscape
+        // photos are shown in full (a portrait fills the page; a landscape letterboxes
+        // rather than being cropped). Multi-photo grids keep "cover".
+        const singlePhoto = page.photos.length === 1;
         return (
             <div className="relative flex-1 group/page" style={{ aspectRatio: `${aspect}` }}>
                 <div
@@ -79,7 +83,7 @@ export const AlbumPageCanvas: React.FC = () => {
                             >
                                 <img
                                     src={url} alt="" decoding="async"
-                                    style={{ width: '100%', height: '100%', objectFit: slideshow ? 'contain' : 'cover', objectPosition, transform }}
+                                    style={{ width: '100%', height: '100%', objectFit: (slideshow || singlePhoto) ? 'contain' : 'cover', objectPosition, transform }}
                                 />
                                 <button
                                     onClick={(e) => { e.stopPropagation(); togglePin(page.id, sp.photo_id); }}
