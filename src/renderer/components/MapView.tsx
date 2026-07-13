@@ -16,7 +16,7 @@ L.Icon.Default.mergeOptions({
 // Create a custom marker icon based on color label
 const createColoredIcon = (colorLabel: string) => {
     const colors: Record<string, string> = {
-        none: '#3b82f6',
+        none: '#9a9aa2',
         red: '#ef4444',
         yellow: '#eab308',
         green: '#22c55e',
@@ -90,7 +90,7 @@ const PhotoMarker: React.FC<{
                     )}
                     <button
                         onClick={() => onClick(photo)}
-                        className="mt-2 px-3 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600"
+                        className="mt-2 px-3 py-1 bg-white/10 text-white text-xs rounded hover:bg-white/15"
                     >
                         View
                     </button>

@@ -26,14 +26,14 @@ export const AlbumCreationModal: React.FC<{ onClose: () => void }> = ({ onClose 
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
             <div
-                className="bg-[#1a1a1a] border border-[#333] rounded-lg shadow-2xl w-[560px] max-w-[92vw] max-h-[90vh] overflow-auto"
+                className="glass-strong rounded-xl shadow-2xl w-[560px] max-w-[92vw] max-h-[90vh] overflow-auto"
                 onClick={e => e.stopPropagation()}
             >
                 <div className="flex items-center justify-between px-5 py-3 border-b border-[#333]">
                     <div className="flex items-center gap-2 text-gray-100">
-                        <Sparkles size={16} className="text-blue-400" /> Nouvel album — assistant
+                        <Sparkles size={16} className="text-gray-200" /> Nouvel album — assistant
                     </div>
                     <button onClick={onClose} className="text-gray-500 hover:text-white"><X size={18} /></button>
                 </div>
@@ -41,8 +41,8 @@ export const AlbumCreationModal: React.FC<{ onClose: () => void }> = ({ onClose 
                 <div className="p-5 space-y-5">
                     <div className="text-sm text-gray-400">
                         {usingSelection
-                            ? <>L'assistant va composer un album à partir de tes <span className="text-blue-400">{selectedCount}</span> photos sélectionnées.</>
-                            : <>Aucune sélection : l'assistant utilisera les <span className="text-blue-400">{totalInGrid}</span> photos affichées dans la grille.</>}
+                            ? <>L'assistant va composer un album à partir de tes <span className="text-gray-200">{selectedCount}</span> photos sélectionnées.</>
+                            : <>Aucune sélection : l'assistant utilisera les <span className="text-gray-200">{totalInGrid}</span> photos affichées dans la grille.</>}
                         <div className="text-xs text-gray-600 mt-1">Les photos rejetées sont exclues automatiquement, l'ordre suit la date de prise de vue.</div>
                     </div>
 
@@ -51,7 +51,7 @@ export const AlbumCreationModal: React.FC<{ onClose: () => void }> = ({ onClose 
                         <input
                             value={name}
                             onChange={e => setName(e.target.value)}
-                            className="w-full bg-[#0f0f0f] border border-[#333] rounded px-3 py-2 text-sm text-gray-200 focus:border-blue-500 outline-none"
+                            className="w-full bg-[#0f0f0f] border border-[#333] rounded px-3 py-2 text-sm text-gray-200 focus:border-white/40 outline-none"
                         />
                     </div>
 
@@ -65,18 +65,18 @@ export const AlbumCreationModal: React.FC<{ onClose: () => void }> = ({ onClose 
                                     <button
                                         key={f}
                                         onClick={() => setFormat(f)}
-                                        className={`flex flex-col items-center gap-1 p-2 rounded border ${active ? 'border-blue-500 bg-blue-500/10' : 'border-[#333] hover:border-[#555]'}`}
+                                        className={`flex flex-col items-center gap-1 p-2 rounded border ${active ? 'border-white/25 bg-white/5' : 'border-[#333] hover:border-[#555]'}`}
                                     >
                                         <div className="flex items-end justify-center h-10 w-full">
                                             <div
-                                                className={active ? 'bg-blue-400' : 'bg-gray-600'}
+                                                className={active ? 'bg-gray-200' : 'bg-gray-600'}
                                                 style={{
                                                     width: spec.aspect >= 1 ? 28 : 28 * spec.aspect,
                                                     height: spec.aspect >= 1 ? 28 / spec.aspect : 28,
                                                 }}
                                             />
                                         </div>
-                                        <span className={`text-[10px] leading-tight text-center ${active ? 'text-blue-300' : 'text-gray-500'}`}>{spec.label}</span>
+                                        <span className={`text-[10px] leading-tight text-center ${active ? 'text-gray-300' : 'text-gray-500'}`}>{spec.label}</span>
                                     </button>
                                 );
                             })}
@@ -88,7 +88,7 @@ export const AlbumCreationModal: React.FC<{ onClose: () => void }> = ({ onClose 
                         <div className="flex gap-2">
                             <button
                                 onClick={() => setTarget('book')}
-                                className={`flex-1 flex items-center justify-center gap-2 py-2 rounded border text-sm ${target === 'book' ? 'border-blue-500 bg-blue-500/10 text-blue-300' : 'border-[#333] text-gray-400 hover:border-[#555]'}`}
+                                className={`flex-1 flex items-center justify-center gap-2 py-2 rounded border text-sm ${target === 'book' ? 'border-white/25 bg-white/5 text-gray-300' : 'border-[#333] text-gray-400 hover:border-[#555]'}`}
                             >
                                 <BookOpen size={15} /> Livre imprimable
                             </button>
@@ -110,7 +110,7 @@ export const AlbumCreationModal: React.FC<{ onClose: () => void }> = ({ onClose 
                     <button
                         onClick={handleCreate}
                         disabled={busy !== 'idle' || sourceCount === 0}
-                        className="px-4 py-2 text-sm rounded bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+                        className="px-4 py-2 text-sm rounded bg-white/10 hover:bg-white/15 text-white disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
                     >
                         <Sparkles size={15} /> {busy === 'building' ? 'Composition…' : 'Composer l’album'}
                     </button>

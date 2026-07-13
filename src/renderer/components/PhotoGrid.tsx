@@ -170,7 +170,7 @@ const PhotoCell = React.memo<{
             style={{
                 width: '100%',
                 height: '100%',
-                borderColor: isSelected ? '#3b82f6' : 'transparent',
+                borderColor: isSelected ? '#9a9aa2' : 'transparent',
                 background: '#1a1a1a',
                 position: 'relative'
             }}
@@ -462,7 +462,7 @@ const ContextMenu: React.FC<{
                     {editors.map((editor) => (
                         <button
                             key={editor.id}
-                            className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-blue-600 hover:text-white"
+                            className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-white/15 hover:text-white"
                             onClick={() => onEditIn(editor.id)}
                         >
                             {editor.name}
@@ -474,19 +474,19 @@ const ContextMenu: React.FC<{
             )}
             <div className="border-t border-[#444] mt-1 pt-1">
                 <button
-                    className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-blue-600 hover:text-white"
+                    className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-white/15 hover:text-white"
                     onClick={onLinkEditedFile}
                 >
                     📎 Link edited file...
                 </button>
                 <button
-                    className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-blue-600 hover:text-white"
+                    className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-white/15 hover:text-white"
                     onClick={onGoToFolder}
                 >
                     📁 Go to folder
                 </button>
                 <button
-                    className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-blue-600 hover:text-white"
+                    className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-white/15 hover:text-white"
                     onClick={onShowInFinder}
                 >
                     📂 Show in Finder
@@ -921,7 +921,7 @@ export const PhotoGrid: React.FC = React.memo(() => {
                 <div className="flex items-center gap-1">
                     {selectedIds.size > 0 && (
                         <>
-                            <span className="text-xs text-blue-400 mr-1">
+                            <span className="text-xs text-gray-200 mr-1">
                                 {selectedIds.size} selected
                             </span>
                             <button
@@ -1066,24 +1066,24 @@ export const PhotoGrid: React.FC = React.memo(() => {
 
             {/* Save Path Notification */}
             {savePathNotification.show && (
-                <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 bg-blue-600 text-white px-6 py-4 rounded-lg shadow-2xl max-w-2xl">
+                <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 bg-white/10 text-white px-6 py-4 rounded-lg shadow-2xl max-w-2xl">
                     <div className="flex items-start gap-3">
                         <div className="text-2xl">📁</div>
                         <div className="flex-1">
                             <p className="font-medium mb-1">Save in Affinity</p>
-                            <p className="text-sm text-blue-100 mb-2">
+                            <p className="text-sm text-gray-300 mb-2">
                                 When saving in Affinity, use this folder:
                             </p>
-                            <code className="block bg-blue-800 px-3 py-2 rounded text-xs break-all">
+                            <code className="block bg-white/10 px-3 py-2 rounded text-xs break-all">
                                 {savePathNotification.path}
                             </code>
-                            <p className="text-xs text-blue-200 mt-2">
+                            <p className="text-xs text-gray-400 mt-2">
                                 ✓ Path copied to clipboard (Cmd+V to paste)
                             </p>
                         </div>
                         <button
                             onClick={() => setSavePathNotification({ show: false, path: '' })}
-                            className="text-blue-200 hover:text-white"
+                            className="text-gray-400 hover:text-white"
                         >
                             ✕
                         </button>

@@ -92,7 +92,7 @@ export const PersonCard: React.FC<PersonCardProps> = ({
             onClick={onClick}
             className={`group relative rounded-2xl overflow-hidden bg-gray-800
                         shadow-lg hover:shadow-2xl transition-all cursor-pointer
-                        hover:scale-[1.03] ${isActive ? 'ring-3 ring-blue-500' : ''}`}
+                        hover:scale-[1.03] ${isActive ? 'ring-3 ring-white/40' : ''}`}
         >
             {/* Face image container - square aspect ratio */}
             <div className="relative w-full aspect-square overflow-hidden bg-gray-700">

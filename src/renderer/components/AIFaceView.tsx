@@ -303,7 +303,7 @@ export const AIFaceView: React.FC = () => {
                         </button>
                         <div>
                             <h1
-                                className="text-2xl font-bold text-white cursor-pointer hover:text-blue-400"
+                                className="text-2xl font-bold text-white cursor-pointer hover:text-white"
                                 onDoubleClick={() => handleRenamePerson(selectedPerson)}
                                 title="Double-click to rename"
                             >
@@ -382,7 +382,7 @@ export const AIFaceView: React.FC = () => {
                 <div className="flex items-center gap-3">
                     <h1 className="text-2xl font-bold text-white">AIFACE</h1>
                     {isScanning && (
-                        <div className="flex items-center gap-2 text-blue-400 text-sm">
+                        <div className="flex items-center gap-2 text-gray-200 text-sm">
                             <Loader2 className="animate-spin" size={16} />
                             {scanProgress.phase === 'clustering' ? (
                                 <span>Grouping similar faces...</span>
@@ -398,8 +398,8 @@ export const AIFaceView: React.FC = () => {
                     <button
                         onClick={scanFaces}
                         disabled={isScanning}
-                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700
-                                   disabled:bg-blue-600/50 text-white rounded-lg transition-colors"
+                        className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20
+                                   disabled:bg-white/10 text-white rounded-lg transition-colors"
                     >
                         {isScanning ? (
                             <Loader2 className="animate-spin" size={18} />
@@ -459,21 +459,21 @@ export const AIFaceView: React.FC = () => {
                                     <button
                                         onClick={() => { setSortBy('name'); setShowSortMenu(false); }}
                                         className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-700
-                                                    ${sortBy === 'name' ? 'text-blue-400' : 'text-gray-300'}`}
+                                                    ${sortBy === 'name' ? 'text-gray-200' : 'text-gray-300'}`}
                                     >
                                         By Name
                                     </button>
                                     <button
                                         onClick={() => { setSortBy('photo_count'); setShowSortMenu(false); }}
                                         className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-700
-                                                    ${sortBy === 'photo_count' ? 'text-blue-400' : 'text-gray-300'}`}
+                                                    ${sortBy === 'photo_count' ? 'text-gray-200' : 'text-gray-300'}`}
                                     >
                                         By Photo Count
                                     </button>
                                     <button
                                         onClick={() => { setSortBy('recent'); setShowSortMenu(false); }}
                                         className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-700
-                                                    ${sortBy === 'recent' ? 'text-blue-400' : 'text-gray-300'}`}
+                                                    ${sortBy === 'recent' ? 'text-gray-200' : 'text-gray-300'}`}
                                     >
                                         By Recent
                                     </button>

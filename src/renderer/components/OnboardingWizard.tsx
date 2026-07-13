@@ -208,7 +208,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
 
             {/* Animated background elements */}
             <div className="absolute inset-0 overflow-hidden">
-                <div className="absolute top-20 left-20 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl animate-pulse" />
+                <div className="absolute top-20 left-20 w-64 h-64 bg-white/5 rounded-full blur-3xl animate-pulse" />
                 <div className="absolute bottom-20 right-20 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
                 <div className="absolute top-1/2 left-1/2 w-48 h-48 bg-green-500/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '2s' }} />
             </div>
@@ -222,14 +222,14 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                             <div
                                 className={`w-3 h-3 rounded-full transition-all duration-300 ${
                                     index <= currentIndex
-                                        ? 'bg-blue-500 scale-100'
+                                        ? 'bg-white/10 scale-100'
                                         : 'bg-gray-600 scale-75'
                                 }`}
                             />
                             {index < steps.length - 1 && (
                                 <div
                                     className={`w-12 h-0.5 transition-all duration-300 ${
-                                        index < currentIndex ? 'bg-blue-500' : 'bg-gray-600'
+                                        index < currentIndex ? 'bg-white/10' : 'bg-gray-600'
                                     }`}
                                 />
                             )}
@@ -244,7 +244,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                     {currentStep === 'welcome' && (
                         <div className="p-8 text-center">
                             {/* Logo/Icon */}
-                            <div className="mb-6 inline-flex items-center justify-center w-24 h-24 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 shadow-lg shadow-blue-500/25">
+                            <div className="mb-6 inline-flex items-center justify-center w-24 h-24 rounded-full bg-gradient-to-br from-zinc-700 to-purple-600 shadow-lg shadow-white/10">
                                 <Camera size={48} className="text-white" />
                             </div>
 
@@ -288,11 +288,11 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                                 {/* New Catalog Option */}
                                 <button
                                     onClick={() => setCurrentStep('location')}
-                                    className="w-full p-6 bg-gradient-to-r from-blue-500/20 to-purple-500/20 hover:from-blue-500/30 hover:to-purple-500/30 border border-blue-500/30 rounded-xl text-left transition-all group"
+                                    className="w-full p-6 bg-gradient-to-r from-zinc-700/20 to-purple-500/20 hover:from-zinc-700/30 hover:to-purple-500/30 border border-white/25/30 rounded-xl text-left transition-all group"
                                 >
                                     <div className="flex items-center gap-4">
-                                        <div className="w-12 h-12 rounded-full bg-blue-500/30 flex items-center justify-center">
-                                            <Plus size={24} className="text-blue-400" />
+                                        <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center">
+                                            <Plus size={24} className="text-gray-200" />
                                         </div>
                                         <div className="flex-1">
                                             <h3 className="text-lg font-semibold text-white mb-1">
@@ -304,7 +304,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                                                     : 'Start with an empty catalog'}
                                             </p>
                                         </div>
-                                        <ArrowRight size={20} className="text-gray-400 group-hover:text-blue-400 transition-colors" />
+                                        <ArrowRight size={20} className="text-gray-400 group-hover:text-white transition-colors" />
                                     </div>
                                 </button>
                             </div>
@@ -338,11 +338,11 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                                     className="w-full p-5 bg-gray-700/50 hover:bg-gray-700/70 border border-gray-600 rounded-xl text-left transition-all group disabled:opacity-50"
                                 >
                                     <div className="flex items-center gap-4">
-                                        <div className="w-10 h-10 rounded-full bg-blue-500/30 flex items-center justify-center">
+                                        <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center">
                                             {isScanning ? (
-                                                <Loader2 size={20} className="text-blue-400 animate-spin" />
+                                                <Loader2 size={20} className="text-gray-200 animate-spin" />
                                             ) : (
-                                                <Search size={20} className="text-blue-400" />
+                                                <Search size={20} className="text-gray-200" />
                                             )}
                                         </div>
                                         <div className="flex-1">
@@ -454,7 +454,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                                         type="text"
                                         value={catalogName}
                                         onChange={(e) => setCatalogName(e.target.value)}
-                                        className="w-full px-4 py-3 bg-gray-700/50 border border-gray-600 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all"
+                                        className="w-full px-4 py-3 bg-gray-700/50 border border-gray-600 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-white/40 focus:ring-2 focus:ring-white/30/20 transition-all"
                                         placeholder="PhotoCatalog"
                                     />
                                 </div>
@@ -485,13 +485,13 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
 
                                 {/* Preview */}
                                 {location && (
-                                    <div className="p-4 bg-blue-500/10 border border-blue-500/30 rounded-xl">
-                                        <p className="text-sm text-blue-300">
+                                    <div className="p-4 bg-white/5 border border-white/25/30 rounded-xl">
+                                        <p className="text-sm text-gray-300">
                                             <span className="font-medium">
                                                 {language === 'fr' ? 'Le catalogue sera créé dans:' : 'Catalog will be created in:'}
                                             </span>
                                             <br />
-                                            <code className="text-blue-200">{location}/{catalogName || 'PhotoCatalog'}</code>
+                                            <code className="text-gray-400">{location}/{catalogName || 'PhotoCatalog'}</code>
                                         </p>
                                     </div>
                                 )}
@@ -675,19 +675,19 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                                 </h3>
                                 <ul className="space-y-2 text-sm text-gray-300">
                                     <li className="flex items-start gap-2">
-                                        <span className="text-blue-400 mt-0.5">•</span>
+                                        <span className="text-gray-200 mt-0.5">•</span>
                                         {language === 'fr'
                                             ? 'Glissez-déposez des photos ou dossiers pour les importer'
                                             : 'Drag and drop photos or folders to import them'}
                                     </li>
                                     <li className="flex items-start gap-2">
-                                        <span className="text-blue-400 mt-0.5">•</span>
+                                        <span className="text-gray-200 mt-0.5">•</span>
                                         {language === 'fr'
                                             ? 'Double-cliquez sur une photo pour l\'ouvrir dans Affinity Photo'
                                             : 'Double-click a photo to open it in Affinity Photo'}
                                     </li>
                                     <li className="flex items-start gap-2">
-                                        <span className="text-blue-400 mt-0.5">•</span>
+                                        <span className="text-gray-200 mt-0.5">•</span>
                                         {language === 'fr'
                                             ? 'Utilisez les étoiles (1-5) et drapeaux pour organiser'
                                             : 'Use stars (1-5) and flags to organize'}

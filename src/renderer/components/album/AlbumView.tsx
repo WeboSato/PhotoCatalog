@@ -26,11 +26,11 @@ export const AlbumView: React.FC = () => {
     return (
         <div className="flex-1 flex overflow-hidden bg-[#0a0a0a]">
             {/* Album list */}
-            <div className="w-60 border-r border-[#333] bg-[#111] flex flex-col">
+            <div className="w-60 border-r border-white/10 bg-[#111]/60 backdrop-blur-2xl flex flex-col">
                 <div className="p-3 border-b border-[#333]">
                     <button
                         onClick={() => setShowCreate(true)}
-                        className="w-full flex items-center justify-center gap-2 py-2 rounded bg-blue-600 hover:bg-blue-500 text-white text-sm"
+                        className="w-full flex items-center justify-center gap-2 py-2 rounded bg-white/10 hover:bg-white/15 text-white text-sm"
                     >
                         <Plus size={15} /> Nouvel album
                     </button>
@@ -46,9 +46,9 @@ export const AlbumView: React.FC = () => {
                             <div
                                 key={a.id}
                                 onClick={() => openAlbum(a.id)}
-                                className={`group flex items-center gap-2 px-2 py-2 rounded cursor-pointer ${active ? 'bg-blue-600/20 ring-1 ring-blue-500/40' : 'hover:bg-[#1d1d1d]'}`}
+                                className={`group flex items-center gap-2 px-2 py-2 rounded cursor-pointer ${active ? 'bg-white/10 ring-1 ring-white/40/40' : 'hover:bg-[#1d1d1d]'}`}
                             >
-                                <BookOpen size={15} className={active ? 'text-blue-400' : 'text-gray-500'} />
+                                <BookOpen size={15} className={active ? 'text-gray-200' : 'text-gray-500'} />
                                 <div className="flex-1 min-w-0">
                                     <div className="text-sm text-gray-200 truncate">{a.name}</div>
                                     <div className="text-[11px] text-gray-500">{fmt ? fmt.label : a.page_format} · {a.page_count || 0} pages</div>
@@ -75,7 +75,7 @@ export const AlbumView: React.FC = () => {
                     <div className="text-sm">Sélectionne des photos dans la grille, puis crée un album.</div>
                     <button
                         onClick={() => setShowCreate(true)}
-                        className="flex items-center gap-2 px-4 py-2 rounded bg-blue-600 hover:bg-blue-500 text-white text-sm"
+                        className="flex items-center gap-2 px-4 py-2 rounded bg-white/10 hover:bg-white/15 text-white text-sm"
                     >
                         <Plus size={15} /> Nouvel album
                     </button>

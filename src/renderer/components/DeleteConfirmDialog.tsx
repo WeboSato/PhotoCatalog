@@ -25,7 +25,7 @@ export const DeleteConfirmDialog: React.FC<DeleteConfirmDialogProps> = ({
     };
 
     return (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
             <div className="bg-gray-800 rounded-lg shadow-2xl w-[450px] overflow-hidden">
                 {/* Header */}
                 <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
@@ -125,7 +125,7 @@ export const DeleteConfirmDialog: React.FC<DeleteConfirmDialogProps> = ({
                                 ? confirmed
                                     ? 'bg-red-600 text-white hover:bg-red-700'
                                     : 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                                : 'bg-blue-600 text-white hover:bg-blue-700'
+                                : 'bg-white/10 text-white hover:bg-white/20'
                             }`}
                     >
                         <Trash2 size={14} />

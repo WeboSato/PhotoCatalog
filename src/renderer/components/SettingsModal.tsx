@@ -292,8 +292,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-            <div className="bg-gray-900 rounded-lg w-[600px] max-h-[80vh] overflow-hidden shadow-xl border border-gray-700">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="glass-strong rounded-xl w-[600px] max-h-[80vh] overflow-hidden shadow-xl">
                 {/* Header */}
                 <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
                     <h2 className="text-lg font-semibold text-white">Settings</h2>
@@ -352,7 +352,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                         <div className="flex gap-2">
                             <button
                                 onClick={() => setShowNewCatalogForm(!showNewCatalogForm)}
-                                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-sm"
+                                className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/15 text-white rounded text-sm"
                             >
                                 <Plus size={16} />
                                 New Catalog
@@ -375,7 +375,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                                         value={newCatalogName}
                                         onChange={(e) => setNewCatalogName(e.target.value)}
                                         placeholder="My Photo Catalog"
-                                        className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                                        className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded text-sm text-white placeholder-gray-500 focus:outline-none focus:border-white/40"
                                     />
                                 </div>
 
@@ -386,7 +386,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                                             type="text"
                                             value={newCatalogLocation}
                                             placeholder="Select a folder..."
-                                            className="flex-1 px-3 py-2 bg-gray-900 border border-gray-700 rounded text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                                            className="flex-1 px-3 py-2 bg-gray-900 border border-gray-700 rounded text-sm text-white placeholder-gray-500 focus:outline-none focus:border-white/40"
                                             readOnly
                                         />
                                         <button
@@ -404,7 +404,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                                         id="copyCurrentData"
                                         checked={copyCurrentData}
                                         onChange={(e) => setCopyCurrentData(e.target.checked)}
-                                        className="rounded border-gray-700 bg-gray-900 text-blue-600 focus:ring-blue-500"
+                                        className="rounded border-gray-700 bg-gray-900 text-gray-300 focus:ring-white/30"
                                     />
                                     <label htmlFor="copyCurrentData" className="text-sm text-gray-400">
                                         Copy current catalog data
@@ -425,7 +425,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                                     <button
                                         onClick={handleCreateNewCatalog}
                                         disabled={!newCatalogName || !newCatalogLocation || isCreatingCatalog}
-                                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 disabled:cursor-not-allowed text-white rounded text-sm"
+                                        className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/15 disabled:bg-white/10 disabled:cursor-not-allowed text-white rounded text-sm"
                                     >
                                         {isCreatingCatalog ? (
                                             <>
@@ -468,7 +468,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                                 value={newPath}
                                 onChange={(e) => setNewPath(e.target.value)}
                                 placeholder="Select a folder..."
-                                className="flex-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                                className="flex-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm text-white placeholder-gray-500 focus:outline-none focus:border-white/40"
                                 readOnly
                             />
                             <button
@@ -484,7 +484,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                                 <button
                                     onClick={handleMigrate}
                                     disabled={isMigrating}
-                                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 text-white rounded text-sm"
+                                    className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/15 disabled:bg-white/10 text-white rounded text-sm"
                                 >
                                     {isMigrating ? (
                                         <>
@@ -582,7 +582,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                                 </div>
                                 <div className="w-full h-2 bg-gray-700 rounded-full overflow-hidden">
                                     <div
-                                        className="h-full bg-blue-500 transition-all duration-300"
+                                        className="h-full bg-white/10 transition-all duration-300"
                                         style={{
                                             width: lightroomProgress.total > 0
                                                 ? `${(lightroomProgress.current / lightroomProgress.total) * 100}%`
@@ -597,7 +597,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                             <button
                                 onClick={handleSyncLightroom}
                                 disabled={isSyncingLightroom || isImportingLightroom || isRegenerating}
-                                className="flex items-center gap-2 px-4 py-2 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-300 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed backdrop-blur-sm transition-all"
+                                className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/15/30 border border-white/25/30 text-gray-300 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed backdrop-blur-sm transition-all"
                             >
                                 {isSyncingLightroom ? (
                                     <>
@@ -692,7 +692,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                                         setLogs([...appLogs]);
                                     }
                                 }}
-                                className="text-xs text-blue-400 hover:text-blue-300"
+                                className="text-xs text-gray-200 hover:text-white"
                             >
                                 {showLogs ? 'Hide' : 'Show'}
                             </button>
@@ -771,7 +771,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                                                 <span className={`font-bold ${
                                                     log.level === 'error' ? 'text-red-400' :
                                                     log.level === 'warn' ? 'text-yellow-400' :
-                                                    'text-blue-400'
+                                                    'text-gray-200'
                                                 }`}>
                                                     [{log.level.toUpperCase()}]
                                                 </span>
@@ -824,7 +824,7 @@ const LanguageSection: React.FC = () => {
                         onClick={() => setLanguage('en')}
                         className={`px-4 py-2 rounded text-sm font-medium transition-colors ${
                             language === 'en'
-                                ? 'bg-blue-600 text-white'
+                                ? 'bg-white/10 text-white'
                                 : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
                         }`}
                     >
@@ -834,7 +834,7 @@ const LanguageSection: React.FC = () => {
                         onClick={() => setLanguage('fr')}
                         className={`px-4 py-2 rounded text-sm font-medium transition-colors ${
                             language === 'fr'
-                                ? 'bg-blue-600 text-white'
+                                ? 'bg-white/10 text-white'
                                 : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
                         }`}
                     >

@@ -88,16 +88,16 @@ export const ImportDialog: React.FC<ImportDialogProps> = ({
             <div className="absolute inset-0 bg-black/70" onClick={onClose} />
 
             {/* Dialog */}
-            <div className="relative bg-gray-800 rounded-lg shadow-2xl border border-gray-700 w-[600px] max-h-[90vh] overflow-hidden">
+            <div className="relative glass-strong rounded-xl shadow-2xl w-[600px] max-h-[90vh] overflow-hidden">
                 {/* Header */}
-                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700 bg-blue-900/30">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700 bg-white/5">
                     <div className="flex items-center gap-3">
-                        <Camera size={24} className="text-blue-400" />
+                        <Camera size={24} className="text-gray-200" />
                         <div>
                             <h2 className="text-lg font-semibold text-white">
                                 Import from {sourceName}
                             </h2>
-                            <p className="text-sm text-blue-300">
+                            <p className="text-sm text-gray-300">
                                 {photoCount} photos detected
                             </p>
                         </div>
@@ -184,7 +184,7 @@ export const ImportDialog: React.FC<ImportDialogProps> = ({
                                     name="rename"
                                     checked={renamePattern === 'original'}
                                     onChange={() => setRenamePattern('original')}
-                                    className="text-blue-500"
+                                    className="text-gray-200"
                                     disabled={isImporting}
                                 />
                                 <span className="text-sm text-gray-300">Keep original name</span>
@@ -195,7 +195,7 @@ export const ImportDialog: React.FC<ImportDialogProps> = ({
                                     name="rename"
                                     checked={renamePattern === 'date'}
                                     onChange={() => setRenamePattern('date')}
-                                    className="text-blue-500"
+                                    className="text-gray-200"
                                     disabled={isImporting}
                                 />
                                 <span className="text-sm text-gray-300">Date + sequence (2024-01-15_001.jpg)</span>
@@ -206,7 +206,7 @@ export const ImportDialog: React.FC<ImportDialogProps> = ({
                                     name="rename"
                                     checked={renamePattern === 'custom'}
                                     onChange={() => setRenamePattern('custom')}
-                                    className="text-blue-500"
+                                    className="text-gray-200"
                                     disabled={isImporting}
                                 />
                                 <span className="text-sm text-gray-300">Custom</span>
@@ -231,7 +231,7 @@ export const ImportDialog: React.FC<ImportDialogProps> = ({
                                 type="checkbox"
                                 checked={deleteAfterImport}
                                 onChange={(e) => setDeleteAfterImport(e.target.checked)}
-                                className="text-blue-500 rounded"
+                                className="text-gray-200 rounded"
                                 disabled={isImporting}
                             />
                             <span className="text-sm text-gray-300">
@@ -258,7 +258,7 @@ export const ImportDialog: React.FC<ImportDialogProps> = ({
                     <button
                         onClick={handleImport}
                         disabled={isImporting || !destinationPath}
-                        className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="flex items-center gap-2 px-4 py-2 text-sm bg-white/10 hover:bg-white/15 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {isImporting ? (
                             <>

@@ -319,7 +319,7 @@ export const LoupeView: React.FC = () => {
                     </button>
                     <button
                         onClick={handleZoomFit}
-                        className={`px-2 py-1 text-sm rounded ${zoom === 1 ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}
+                        className={`px-2 py-1 text-sm rounded ${zoom === 1 ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}
                         title="Fit to screen (0)"
                     >
                         FIT
@@ -332,7 +332,7 @@ export const LoupeView: React.FC = () => {
                     </button>
                     <button
                         onClick={() => setZoom(1)}
-                        className={`px-2 py-1 text-sm rounded ${zoom === 1 ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}
+                        className={`px-2 py-1 text-sm rounded ${zoom === 1 ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}
                         title="100% (1:1)"
                     >
                         1:1
@@ -496,9 +496,9 @@ export const LoupeView: React.FC = () => {
 
             {/* Filmstrip resize handle */}
             <div
-                className="h-3 bg-gray-800 hover:bg-blue-600 cursor-ns-resize flex items-center justify-center transition-colors"
+                className="h-3 bg-gray-800 hover:bg-white/15 cursor-ns-resize flex items-center justify-center transition-colors"
                 onMouseDown={handleFilmstripResizeStart}
-                style={{ borderTop: '1px solid #3b82f6' }}
+                style={{ borderTop: '1px solid #9a9aa2' }}
             >
                 <div className="w-16 h-1 bg-gray-500 rounded hover:bg-white" />
             </div>

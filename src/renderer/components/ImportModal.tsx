@@ -61,7 +61,7 @@ export const ImportModal: React.FC = () => {
                         <div className={`p-2 rounded-full ${
                             isComplete ? 'bg-green-500/20 text-green-400' :
                             isError ? 'bg-red-500/20 text-red-400' :
-                            'bg-blue-500/20 text-blue-400'
+                            'bg-white/10 text-gray-200'
                         }`}>
                             {isComplete ? <Check size={20} /> :
                              isError ? <AlertCircle size={20} /> :
@@ -106,7 +106,7 @@ export const ImportModal: React.FC = () => {
                                 className={`progress-bar-fill ${
                                     isComplete ? 'bg-green-500' :
                                     isError ? 'bg-red-500' :
-                                    'bg-blue-500'
+                                    'bg-white/10'
                                 }`}
                                 style={{ width: `${getProgressPercent()}%` }}
                             />

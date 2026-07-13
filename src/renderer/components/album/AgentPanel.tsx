@@ -25,7 +25,7 @@ export const AgentPanel: React.FC = () => {
 
     if (!activeAlbum) {
         return (
-            <div className="w-72 border-l border-[#333] bg-[#111] p-4 text-sm text-gray-500">
+            <div className="w-72 border-l border-white/10 bg-[#111]/60 backdrop-blur-2xl p-4 text-sm text-gray-500">
                 <div className="flex items-center gap-2 text-gray-400 mb-2">
                     <Sparkles size={16} /> Assistant album
                 </div>
@@ -41,10 +41,10 @@ export const AgentPanel: React.FC = () => {
     const activeDensity = settings.density || 'balanced';
 
     return (
-        <div className="w-72 border-l border-[#333] bg-[#111] flex flex-col">
+        <div className="w-72 border-l border-white/10 bg-[#111]/60 backdrop-blur-2xl flex flex-col">
             <div className="p-4 border-b border-[#333]">
                 <div className="flex items-center gap-2 text-gray-200 mb-1">
-                    <Sparkles size={16} className="text-blue-400" /> Assistant album
+                    <Sparkles size={16} className="text-gray-200" /> Assistant album
                 </div>
                 <div className="text-xs text-gray-500">{fmt ? fmt.label : activeAlbum.page_format}</div>
             </div>
@@ -72,7 +72,7 @@ export const AgentPanel: React.FC = () => {
                             key={d.key}
                             disabled={building || exporting}
                             onClick={() => regenerate(d.key)}
-                            className={`flex-1 py-1.5 rounded text-xs border ${activeDensity === d.key ? 'border-blue-500 bg-blue-500/10 text-blue-300' : 'border-[#333] text-gray-400 hover:border-[#555]'} disabled:opacity-40`}
+                            className={`flex-1 py-1.5 rounded text-xs border ${activeDensity === d.key ? 'border-white/25 bg-white/5 text-gray-300' : 'border-[#333] text-gray-400 hover:border-[#555]'} disabled:opacity-40`}
                             title={`Densité : ${d.label}`}
                         >
                             {d.label}
@@ -92,7 +92,7 @@ export const AgentPanel: React.FC = () => {
             {/* Progress */}
             {(busy !== 'idle' || progress) && (
                 <div className="p-4 border-b border-[#333] text-xs text-gray-400 flex items-center gap-2">
-                    <Loader2 size={14} className="animate-spin text-blue-400" />
+                    <Loader2 size={14} className="animate-spin text-gray-200" />
                     {progressLabel(progress?.phase)}
                     {progress?.total ? ` ${progress.current || 0}/${progress.total}` : ''}
                 </div>
@@ -130,7 +130,7 @@ export const AgentPanel: React.FC = () => {
                 <button
                     disabled={exporting || pages.length === 0}
                     onClick={() => exportActive('book')}
-                    className="w-full flex items-center justify-center gap-2 py-2 rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm"
+                    className="w-full flex items-center justify-center gap-2 py-2 rounded bg-white/10 hover:bg-white/15 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm"
                 >
                     <FileText size={15} /> Exporter le livre PDF
                 </button>

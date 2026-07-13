@@ -132,7 +132,7 @@ export const HistorySidebar: React.FC = React.memo(() => {
     };
 
     return (
-        <div className="w-64 bg-gray-900 border-r border-gray-700 flex flex-col overflow-hidden">
+        <div className="w-64 bg-gray-900/55 backdrop-blur-2xl border-r border-white/10 flex flex-col overflow-hidden">
             {/* Header */}
             <div className="p-3 border-b border-gray-700 flex items-center gap-2">
                 <button
@@ -208,7 +208,7 @@ export const HistorySidebar: React.FC = React.memo(() => {
                         ) : (
                             <div className="space-y-0.5">
                                 {/* Current state indicator */}
-                                <div className="px-2 py-1.5 text-xs bg-blue-600/20 text-blue-400 rounded border border-blue-600/30">
+                                <div className="px-2 py-1.5 text-xs bg-white/10 text-gray-200 rounded border border-white/20/30">
                                     Current state
                                 </div>
 
@@ -216,7 +216,7 @@ export const HistorySidebar: React.FC = React.memo(() => {
                                 {photoHistory.map((entry, index) => (
                                     <div
                                         key={entry.id}
-                                        className={`px-2 py-1.5 text-xs text-gray-300 hover:bg-gray-700 rounded cursor-pointer group transition-colors ${entry.devSettingsSnapshot ? 'border-l-2 border-transparent hover:border-blue-500' : ''}`}
+                                        className={`px-2 py-1.5 text-xs text-gray-300 hover:bg-gray-700 rounded cursor-pointer group transition-colors ${entry.devSettingsSnapshot ? 'border-l-2 border-transparent hover:border-white/25' : ''}`}
                                         title={`${entry.action}\n${new Date(entry.timestamp).toLocaleString()}${entry.devSettingsSnapshot ? '\nClick to restore' : ''}`}
                                         onClick={() => {
                                             if (entry.devSettingsSnapshot) {

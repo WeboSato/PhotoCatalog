@@ -89,7 +89,7 @@ const SidebarItem: React.FC<SidebarItemProps> = ({
         <button
             onClick={onClick}
             className={`w-full flex items-center justify-between px-3 py-1.5 text-sm rounded transition-colors
-                ${isActive ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white'}`}
+                ${isActive ? 'bg-white/10 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white'}`}
             style={{ paddingLeft: `${12 + indent * 16}px` }}
         >
             <div className="flex items-center gap-2 truncate">
@@ -97,7 +97,7 @@ const SidebarItem: React.FC<SidebarItemProps> = ({
                 <span className="truncate">{label}</span>
             </div>
             {count !== undefined && (
-                <span className={`text-xs ${isActive ? 'text-blue-200' : 'text-gray-500'}`}>
+                <span className={`text-xs ${isActive ? 'text-gray-400' : 'text-gray-500'}`}>
                     {count}
                 </span>
             )}
@@ -183,7 +183,7 @@ export const Sidebar: React.FC = React.memo(() => {
 
     if (sidebarCollapsed) {
         return (
-            <div className="w-12 bg-gray-900 border-r border-gray-700 flex flex-col items-center py-4 gap-4">
+            <div className="w-12 bg-gray-900/55 backdrop-blur-2xl border-r border-white/10 flex flex-col items-center py-4 gap-4">
                 <button className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded">
                     <Database size={20} />
                 </button>
@@ -253,7 +253,7 @@ export const Sidebar: React.FC = React.memo(() => {
     };
 
     return (
-        <div className="w-64 bg-gray-900 border-r border-gray-700 flex flex-col overflow-hidden">
+        <div className="w-64 bg-gray-900/55 backdrop-blur-2xl border-r border-white/10 flex flex-col overflow-hidden">
             {/* Header */}
             <div className="p-3 border-b border-gray-700 flex items-center justify-between">
                 <div>
@@ -354,7 +354,7 @@ export const Sidebar: React.FC = React.memo(() => {
                         onClick={() => getStore().setFilters({ color_label: ['green'] })}
                     />
                     <SidebarItem
-                        icon={<div className="w-3 h-3 rounded-full bg-blue-500" />}
+                        icon={<div className="w-3 h-3 rounded-full bg-white/10" />}
                         label={t('blue')}
                         isActive={filters.color_label?.includes('blue')}
                         onClick={() => getStore().setFilters({ color_label: ['blue'] })}
@@ -408,13 +408,13 @@ export const Sidebar: React.FC = React.memo(() => {
                                 <button
                                     onClick={() => getStore().setActiveCollectionId(collection.id)}
                                     className={`flex-1 flex items-center justify-between px-3 py-1.5 text-sm rounded-l transition-colors
-                                        ${activeCollectionId === collection.id ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white'}`}
+                                        ${activeCollectionId === collection.id ? 'bg-white/10 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white'}`}
                                 >
                                     <div className="flex items-center gap-2 truncate">
                                         <LayoutGrid size={14} />
                                         <span className="truncate">{collection.name}</span>
                                     </div>
-                                    <span className={`text-xs ${activeCollectionId === collection.id ? 'text-blue-200' : 'text-gray-500'}`}>
+                                    <span className={`text-xs ${activeCollectionId === collection.id ? 'text-gray-400' : 'text-gray-500'}`}>
                                         {collection.photo_count}
                                     </span>
                                 </button>
@@ -470,7 +470,7 @@ export const Sidebar: React.FC = React.memo(() => {
                                    text-gray-300 hover:text-white hover:bg-gray-800 rounded transition-colors"
                     >
                         <div className="flex items-center gap-2">
-                            <ScanFace size={16} className="text-blue-400" />
+                            <ScanFace size={16} className="text-gray-200" />
                             <span>AIFACE</span>
                         </div>
                         {peopleCount > 0 && (
@@ -489,7 +489,7 @@ export const Sidebar: React.FC = React.memo(() => {
                                    text-gray-300 hover:text-white hover:bg-gray-800 rounded transition-colors"
                     >
                         <div className="flex items-center gap-2">
-                            <BookOpen size={16} className="text-blue-400" />
+                            <BookOpen size={16} className="text-gray-200" />
                             <span>Albums</span>
                         </div>
                     </button>
@@ -523,8 +523,8 @@ export const Sidebar: React.FC = React.memo(() => {
                 <button
                     onClick={handleImportFolder}
                     className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium text-white rounded-lg transition-all
-                        bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/30 backdrop-blur-sm
-                        hover:border-blue-400/50 hover:shadow-lg hover:shadow-blue-500/10"
+                        bg-white/10 hover:bg-white/15/30 border border-white/25/30 backdrop-blur-sm
+                        hover:border-white/20/50 hover:shadow-lg hover:shadow-white/5"
                 >
                     <Plus size={16} />
                     {t('import')}
