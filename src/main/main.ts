@@ -705,12 +705,16 @@ app.whenReady().then(async () => {
     setTimeout(async () => {
         const photos = catalogDb.getAllPhotos(999999, 0);
 
-        // First: check if thumbnails exist on disk but not in DB (crash recovery)
-        const recoveredCount = await recoverExistingThumbnails(photos);
-
-        // Re-fetch to get updated list
-        const updatedPhotos = catalogDb.getAllPhotos(999999, 0);
-        const missingThumbnails = updatedPhotos.filter(p => !p.thumbnail_path);
+        // Fast path: if every photo already has a thumbnail (the normal case), skip
+        // the crash-recovery disk scan AND the second full re-load entirely. On a big
+        // library on an external HDD those scans were needless work every launch.
+        let missingThumbnails = photos.filter(p => !p.thumbnail_path);
+        if (missingThumbnails.length > 0) {
+            const recoveredCount = await recoverExistingThumbnails(photos);
+            if (recoveredCount > 0) {
+                missingThumbnails = catalogDb.getAllPhotos(999999, 0).filter(p => !p.thumbnail_path);
+            }
+        }
 
         if (missingThumbnails.length > 0) {
             const BATCH_SIZE = 3; // Process 3 at a time (lower to reduce CPU load)
@@ -768,8 +772,14 @@ app.whenReady().then(async () => {
             console.warn('[FaceCrop] Backfill skipped:', e);
         }
 
-        // Auto AI tagging for photos without keywords (background, low priority)
+        // Auto AI tagging for photos without keywords — OFF by default. On a large
+        // library on an external HDD this scanned all photos and ran ONNX on every
+        // launch, saturating the disk so the visible grid's thumbnails couldn't load.
+        // Opt in via the autoTagOnStartup setting; otherwise tag on demand only.
         try {
+            if (!settingsService.get('autoTagOnStartup')) {
+                throw { skipped: true };
+            }
             const { initializeAI, analyzeImage } = await import('./services/AITaggingService');
             const aiReady = await initializeAI();
             if (aiReady) {

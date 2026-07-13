@@ -8,6 +8,10 @@ import { DeleteDialog } from './DeleteDialog';
 
 const getStore = () => useCatalogStore.getState();
 
+// Session-wide set of thumbnail URLs that have finished loading at least once, so
+// re-rendered cells skip the loading spinner and show the cached image instantly.
+const loadedThumbUrls = new Set<string>();
+
 // Compute CSS filter from development settings
 const computeCssFilter = (devSettings: DevelopmentSettings | null): string => {
     if (!devSettings) return 'none';
@@ -116,9 +120,14 @@ const PhotoCell = React.memo<{
     onColorChange?: (color: string) => void;
     onReject?: () => void;
 }>(({ photo, isSelected, size, inSurveyMode, onClick, onDblClick, onContextMenu, onRatingChange, onColorChange, onReject }) => {
-    const [loadState, setLoadState] = useState<'loading' | 'loaded' | 'error'>('loading');
-
     const thumbUrl = useMemo(() => getThumbnailUrl(photo), [photo.thumbnail_path]);
+
+    // Any thumbnail that has loaded once stays "loaded" for the whole session, so a
+    // grid reload (e.g. after a background refresh) never flashes a spinner over an
+    // already-decoded image — the browser serves it from the local-image cache.
+    const [loadState, setLoadState] = useState<'loading' | 'loaded' | 'error'>(
+        () => loadedThumbUrls.has(thumbUrl) ? 'loaded' : 'loading'
+    );
 
     // Compute CSS filter for this photo's develop settings
     const cssFilter = useMemo(() => {
@@ -142,18 +151,21 @@ const PhotoCell = React.memo<{
         }
     }, [photo.blur_hash]);
 
-    // Reset state when URL changes
+    // Reset state when URL changes — but keep "loaded" if this URL loaded before.
     useEffect(() => {
         if (!thumbUrl || thumbUrl === PLACEHOLDER_IMAGE) {
             setLoadState('error');
+        } else if (loadedThumbUrls.has(thumbUrl)) {
+            setLoadState('loaded');
         } else {
             setLoadState('loading');
         }
     }, [thumbUrl]);
 
     const handleLoad = useCallback(() => {
+        loadedThumbUrls.add(thumbUrl);
         setLoadState('loaded');
-    }, []);
+    }, [thumbUrl]);
 
     const handleError = useCallback(() => {
         setLoadState('error');

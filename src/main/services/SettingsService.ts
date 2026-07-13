@@ -10,6 +10,7 @@ interface AppSettings {
     gridSize: number;
     language: string;
     showArchived: boolean;
+    autoTagOnStartup: boolean;
 }
 
 const defaultSettings: AppSettings = {
@@ -18,7 +19,8 @@ const defaultSettings: AppSettings = {
     theme: 'dark',
     gridSize: 150,
     language: 'fr',
-    showArchived: false
+    showArchived: false,
+    autoTagOnStartup: false // off by default: heavy on external HDDs (like Lightroom)
 };
 
 // Use any type to avoid TS issues with electron-store
