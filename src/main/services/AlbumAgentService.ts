@@ -38,7 +38,21 @@ function matchesTheme(
     switch (theme) {
         case 'famille': return faces.length >= 1;                    // people present
         case 'portraits': return faces.length >= 1 && maxFaceArea >= 0.03; // a real, sizeable face
-        case 'spectacle': return hasWord(THEME_WORDS.spectacle);
+        case 'spectacle': {
+            if (hasWord(THEME_WORDS.spectacle)) return true;
+            // Library never AI-tagged? Recognize stage light without keywords:
+            // dark frame with hot isolated highlights, high ISO, no flash — the
+            // EXIF/blurhash signature of a concert or theatre shot.
+            const iso = p.iso || 0;
+            const flash = !!p.flash_used;
+            const g = blurGrid(p.blur_hash);
+            if (!g) return !flash && iso >= 3200;
+            const mean = g.reduce((a: number, b: number) => a + b, 0) / g.length;
+            const peak = Math.max(...g);
+            const dark = mean < 70;            // mostly black frame
+            const spotlit = peak - mean > 80;  // strong stage-light contrast
+            return dark && (spotlit || (!flash && iso >= 1600));
+        }
         case 'voyage': return (p.gps_latitude != null) || hasWord(THEME_WORDS.voyage);
         default: return true; // 'all' / 'evenement' -> no filter
     }
@@ -145,12 +159,16 @@ class AlbumAgentService {
         // never accidentally emptied.
         const theme = params.theme || 'all';
         let themeKept = pool.length;
+        let themeIgnored = false;
         if (theme !== 'all' && theme !== 'evenement') {
             const filtered = pool.filter(p => matchesTheme(theme, p, kw[p.id] || [], faces[p.id] || []));
             if (filtered.length >= 3) {
                 pool = filtered;
                 ids = pool.map(p => p.id);
                 themeKept = filtered.length;
+            } else {
+                // Be honest instead of silently dumping everything in.
+                themeIgnored = true;
             }
         }
 
@@ -279,7 +297,9 @@ class AlbumAgentService {
                 nearDupsRemoved,
                 peopleCovered: peopleSeen.size,
                 strategy: (theme !== 'all' && theme !== 'evenement')
-                    ? `Sujet « ${themeLabel(theme)} » : ${themeKept} photos retenues, regroupées en ${buckets.length} événement(s).`
+                    ? (themeIgnored
+                        ? `Sujet « ${themeLabel(theme)} » : trop peu de photos correspondantes — tout le lot (${pool.length}) a été gardé.`
+                        : `Sujet « ${themeLabel(theme)} » : ${themeKept} photos retenues, regroupées en ${buckets.length} événement(s).`)
                     : `Regroupé en ${buckets.length} événement(s), ordonné par date, mises en page aérées.`,
             },
         };
