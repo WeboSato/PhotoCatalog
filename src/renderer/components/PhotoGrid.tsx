@@ -655,6 +655,8 @@ export const PhotoGrid: React.FC = React.memo(() => {
                 prefetchedRef.current.add(p.id);
                 const img = new Image();
                 img.decoding = 'async';
+                // Prefetch must never starve the visible cells on a slow disk.
+                (img as any).fetchPriority = 'low';
                 img.src = getThumbnailUrl(p);
             }
         }

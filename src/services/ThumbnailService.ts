@@ -61,6 +61,18 @@ class ThumbnailService {
     private faceCropDir: string = '';
     private useLightroomStructure: boolean = false;
 
+    // --- SSD mirror --------------------------------------------------------
+    // When the thumbnail cache lives on an external volume (catalog kept next to
+    // the photos on a USB HDD), every cold grid read pays a seek penalty — and
+    // Chromium's HTTP cache can't be trusted to hold 20k+ entries "forever".
+    // Lightroom solves this with a local preview cache on the internal disk; we
+    // do the same: each thumbnail served is mirrored once into userData, and all
+    // later reads — including after a relaunch — come from the SSD. Mirror files
+    // keep the source's mtime so ETags are identical whichever disk serves.
+    private mirrorDir: string = '';
+    private mirrorActive: boolean = false;
+    private mirrorInflight = new Set<string>();
+
     initialize(customCacheDir?: string, lightroomStyle: boolean = false): void {
         this.cacheDir = customCacheDir || path.join(
             app?.getPath('userData') || process.cwd(),
@@ -91,6 +103,128 @@ class ThumbnailService {
         // Square face crops for the people view (Layer 2).
         this.faceCropDir = path.join(this.cacheDir, 'faces');
         fs.mkdirSync(this.faceCropDir, { recursive: true });
+
+        // Mirror only earns its keep when the cache is NOT on the internal disk.
+        const userData = app?.getPath('userData') || '';
+        this.mirrorDir = path.join(userData, 'thumb-mirror');
+        this.mirrorActive = userData !== '' && (process.platform === 'darwin'
+            ? this.cacheDir.startsWith('/Volumes/')
+            : !this.cacheDir.startsWith(userData));
+        if (this.mirrorActive) {
+            try {
+                fs.mkdirSync(this.mirrorDir, { recursive: true });
+                safeLog(`[ThumbnailService] SSD mirror active at ${this.mirrorDir}`);
+            } catch {
+                this.mirrorActive = false;
+            }
+        }
+    }
+
+    /** True for files living inside the thumbnail cache (thumbs/previews/faces). */
+    isCachedFile(filePath: string): boolean {
+        return this.cacheDir !== '' && filePath.startsWith(this.cacheDir + path.sep);
+    }
+
+    private mirrorKeyFor(filePath: string): string {
+        const hash = crypto.createHash('md5').update(filePath).digest('hex');
+        return path.join(this.mirrorDir, `${hash}.webp`);
+    }
+
+    private async mirrorFreeBytes(): Promise<number> {
+        try {
+            const s = await (fs.promises as any).statfs(this.mirrorDir);
+            return s.bavail * s.bsize;
+        } catch {
+            return Number.MAX_SAFE_INTEGER; // can't tell — don't block on it
+        }
+    }
+
+    /** SSD copy of this cached file if we have one — lets serving skip the HDD entirely. */
+    async mirrorLookup(filePath: string): Promise<{ path: string; size: number; mtimeMs: number; mtime: Date } | null> {
+        if (!this.mirrorActive || !this.isCachedFile(filePath)) return null;
+        const m = this.mirrorKeyFor(filePath);
+        try {
+            const stat = await fs.promises.stat(m);
+            return stat.size > 0 ? { path: m, size: stat.size, mtimeMs: stat.mtimeMs, mtime: stat.mtime } : null;
+        } catch {
+            return null;
+        }
+    }
+
+    /** Copy a served file into the SSD mirror (atomic rename, mtime preserved). */
+    async mirrorStore(filePath: string, srcTimes?: { atime: Date; mtime: Date }): Promise<boolean> {
+        if (!this.mirrorActive || !this.isCachedFile(filePath)) return false;
+        const dest = this.mirrorKeyFor(filePath);
+        if (this.mirrorInflight.has(dest)) return false;
+        this.mirrorInflight.add(dest);
+        const tmp = `${dest}.${process.pid}.tmp`;
+        try {
+            const times = srcTimes ?? await fs.promises.stat(filePath);
+            await fs.promises.copyFile(filePath, tmp);
+            await fs.promises.utimes(tmp, times.atime, times.mtime); // keep ETag identical
+            await fs.promises.rename(tmp, dest);
+            return true;
+        } catch {
+            fs.promises.unlink(tmp).catch(() => {});
+            return false;
+        } finally {
+            this.mirrorInflight.delete(dest);
+        }
+    }
+
+    /** Compute a BlurHash from an existing (thumbnail-sized) file — backfill path. */
+    async blurHashFromFile(filePath: string): Promise<string | null> {
+        try {
+            const { data, info } = await sharp(filePath)
+                .resize(32, 32, { fit: 'inside' })
+                .ensureAlpha()
+                .raw()
+                .toBuffer({ resolveWithObject: true });
+            return encode(new Uint8ClampedArray(data), info.width, info.height, 4, 3);
+        } catch {
+            return null;
+        }
+    }
+
+    /** Drop mirror entries for outputs about to be rewritten (rotation, re-edit). */
+    mirrorInvalidate(...filePaths: string[]): void {
+        if (!this.mirrorActive) return;
+        for (const fp of filePaths) {
+            fs.promises.unlink(this.mirrorKeyFor(fp)).catch(() => {});
+        }
+    }
+
+    /**
+     * Background trickle-copy of the thumbnail set to the SSD: a few files at a
+     * time with pauses, so interactive reads keep priority on the slow disk.
+     * After one warm pass the grid never touches the HDD again for known thumbs.
+     */
+    async warmMirror(paths: string[]): Promise<{ copied: number; skipped: number }> {
+        if (!this.mirrorActive) return { copied: 0, skipped: 0 };
+        let existing: Set<string>;
+        try {
+            existing = new Set(await fs.promises.readdir(this.mirrorDir));
+        } catch {
+            existing = new Set();
+        }
+        const todo = paths.filter(p =>
+            p && this.isCachedFile(p) && !existing.has(path.basename(this.mirrorKeyFor(p))));
+        const skipped = paths.length - todo.length;
+
+        const MIN_FREE = 8 * 1024 * 1024 * 1024; // never eat the last 8 GB of the SSD
+        if (todo.length === 0 || await this.mirrorFreeBytes() < MIN_FREE) {
+            if (todo.length > 0) safeLog('[ThumbMirror] low disk space — warm pass skipped');
+            return { copied: 0, skipped };
+        }
+
+        let copied = 0;
+        for (let i = 0; i < todo.length; i++) {
+            if (await this.mirrorStore(todo[i])) copied++;
+            if (i % 4 === 3) await new Promise(r => setTimeout(r, 350)); // ~11 files/s
+            if (i % 400 === 399 && await this.mirrorFreeBytes() < MIN_FREE) break;
+            if (copied > 0 && copied % 2000 === 0) safeLog(`[ThumbMirror] warming… ${copied}/${todo.length}`);
+        }
+        return { copied, skipped };
     }
 
     private getHashedPath(filePath: string): string {
@@ -141,6 +275,10 @@ class ThumbnailService {
                     };
                 }
             }
+
+            // These files are about to be (re)written — drop stale SSD mirror copies
+            // so rotations/edits never serve an outdated image.
+            this.mirrorInvalidate(smallPath, thumbnailPath, largePath, previewPath);
 
             // Ensure output directories exist
             const thumbnailDir = path.dirname(thumbnailPath);

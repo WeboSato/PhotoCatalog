@@ -41,6 +41,14 @@ import crypto from 'crypto';
 
 let mainWindow: BrowserWindow | null = null;
 
+// Give Chromium's HTTP disk cache room for the whole thumbnail set — the default
+// (~a few hundred MB) evicts a 20k-photo library long before "forever".
+app.commandLine.appendSwitch('disk-cache-size', String(4 * 1024 * 1024 * 1024));
+
+// Where each image response came from — logged at milestones so cache behaviour
+// is observable in the wild (SSD mirror vs external disk vs 304 revalidation).
+const imageServeStats = { mirror: 0, disk: 0, notModified: 0 };
+
 // Recover thumbnails that exist on disk but not in DB (crash recovery)
 async function recoverExistingThumbnails(photos: any[]): Promise<number> {
     const thumbnailDir = path.join(app.getPath('userData'), 'thumbnails', 'thumbs');
@@ -589,31 +597,54 @@ app.whenReady().then(async () => {
         const filePath = rawPath.split('/').map(part => decodeURIComponent(part)).join('/');
 
         try {
+            // Thumbnails living on an external drive are mirrored to the internal
+            // SSD on first serve — later reads (and every relaunch) skip the slow
+            // disk entirely. The mirror stat doubles as the existence check.
+            const isThumb = thumbnailService.isCachedFile(filePath);
+            const mirrored = isThumb ? await thumbnailService.mirrorLookup(filePath) : null;
+
             // Async stat instead of existsSync — never blocks the main thread, and
             // gives us mtime/size for an ETag so we can answer revalidations cheaply.
-            const stat = await fs.promises.stat(filePath);
+            const stat = mirrored ?? await fs.promises.stat(filePath);
+            const serveFrom = mirrored ? mirrored.path : filePath;
+            if (isThumb && !mirrored) {
+                // Fire-and-forget: the streamed read below warms the OS page cache,
+                // so this copy costs (almost) no extra HDD I/O.
+                const st = stat as { atime?: Date; mtime: Date };
+                void thumbnailService.mirrorStore(filePath, { atime: st.atime ?? st.mtime, mtime: st.mtime });
+            }
 
             const ext = filePath.split('.').pop()?.toLowerCase();
             const contentType = IMAGE_MIME_TYPES[ext || ''] || 'application/octet-stream';
 
-            // Validator tracks size+mtime. Edited thumbnails (mtime changes) refetch
-            // automatically; unchanged files revalidate without re-reading bytes.
+            // Validator tracks size+mtime — the mirror preserves both, so the ETag
+            // is identical whichever disk serves. Regenerated thumbnails (mtime
+            // changes) refetch automatically; unchanged files revalidate for free.
             const etag = `"${stat.size}-${Math.round(stat.mtimeMs)}"`;
             if (request.headers.get('if-none-match') === etag) {
+                imageServeStats.notModified++;
                 return new Response(null, { status: 304 });
+            }
+
+            if (mirrored) imageServeStats.mirror++; else imageServeStats.disk++;
+            const total = imageServeStats.mirror + imageServeStats.disk + imageServeStats.notModified;
+            if (total === 25 || total === 100 || total % 1000 === 0) {
+                console.log(`[local-image] ${total} served: ${imageServeStats.mirror} ssd-mirror, ${imageServeStats.disk} disk, ${imageServeStats.notModified} revalidated`);
             }
 
             const headers: Record<string, string> = {
                 'Content-Type': contentType,
                 'Access-Control-Allow-Origin': '*',
-                'Cache-Control': 'max-age=3600',
+                // Thumbnails are effectively immutable (regeneration bumps mtime →
+                // new ETag after expiry): cache for a month. Originals stay short.
+                'Cache-Control': isThumb ? 'public, max-age=2592000' : 'max-age=3600',
                 'ETag': etag,
                 'Last-Modified': stat.mtime.toUTCString()
             };
 
             // Stream off the libuv threadpool — the main process never buffers the
             // whole file, so a burst of grid <img> requests can't serialize-block it.
-            const webStream = Readable.toWeb(fs.createReadStream(filePath)) as ReadableStream;
+            const webStream = Readable.toWeb(fs.createReadStream(serveFrom)) as ReadableStream;
             return new Response(webStream, { status: 200, headers });
         } catch (err: any) {
             if (err?.code === 'ENOENT') {
@@ -770,6 +801,53 @@ app.whenReady().then(async () => {
             if (res.generated > 0) console.log(`[FaceCrop] Backfilled ${res.generated} face crops`);
         } catch (e) {
             console.warn('[FaceCrop] Backfill skipped:', e);
+        }
+
+        // One fresh view of the library, shared by the two background passes below.
+        const libraryNow = missingThumbnails.length > 0 ? catalogDb.getAllPhotos(999999, 0) : photos;
+
+        // Trickle-mirror the thumbnail set to the internal SSD (no-op when the
+        // cache already lives there). Throttled to a few files/sec so it never
+        // competes with interactive reads; after one pass, scrolling and every
+        // relaunch serve thumbnails from the SSD instead of the external drive.
+        {
+            const thumbPaths = libraryNow.map((p: any) => p.thumbnail_path).filter(Boolean) as string[];
+            thumbnailService.warmMirror(thumbPaths).then(r => {
+                if (r.copied > 0) console.log(`[ThumbMirror] warm pass done: ${r.copied} copied to SSD (${r.skipped} already there)`);
+            }).catch(() => {});
+        }
+
+        // Backfill missing BlurHashes from existing thumbnails. Libraries indexed
+        // before blur_hash existed have NULL everywhere, so the grid could never
+        // show its blurred placeholders (spinners instead) and the agent's
+        // near-dup/stage-light logic ran blind. Hashes are computed from the tiny
+        // thumbnail (never the original), read through the SSD mirror when warmed,
+        // and rows fill in live so placeholders appear progressively.
+        {
+            const needing = (libraryNow as any[]).filter(p => !p.blur_hash && p.thumbnail_path);
+            if (needing.length > 0) {
+                console.log(`[BlurHash] Backfilling ${needing.length} photos from thumbnails…`);
+                let done = 0;
+                let lastRefresh = 0;
+                for (let i = 0; i < needing.length; i += 6) {
+                    const batch = needing.slice(i, i + 6);
+                    await Promise.all(batch.map(async p => {
+                        const m = await thumbnailService.mirrorLookup(p.thumbnail_path);
+                        const hash = await thumbnailService.blurHashFromFile(m ? m.path : p.thumbnail_path);
+                        if (hash) {
+                            catalogDb.updatePhoto(p.id, { blur_hash: hash });
+                            done++;
+                        }
+                    }));
+                    if (done - lastRefresh >= 2000) {
+                        lastRefresh = done;
+                        mainWindow?.webContents.send('photos:refresh');
+                    }
+                    await new Promise(r => setTimeout(r, 250));
+                }
+                mainWindow?.webContents.send('photos:refresh');
+                console.log(`[BlurHash] Backfill done: ${done}/${needing.length} photos`);
+            }
         }
 
         // Auto AI tagging for photos without keywords — OFF by default. On a large
