@@ -94,6 +94,7 @@ const useScrollCompression = (callback: (delta: number) => void, delay: number =
 const applyPhotoFilters = (photos: Photo[], filters: any): Photo[] => {
     return photos.filter(p => {
         if (filters.rating?.min !== undefined && (p.rating || 0) < filters.rating.min) return false;
+        if (filters.rating?.max !== undefined && (p.rating || 0) > filters.rating.max) return false;
         if (filters.flag?.length && !filters.flag.includes(p.flag || 'none')) return false;
         if (filters.color_label?.length && !filters.color_label.includes(p.color_label || 'none')) return false;
         return true;
@@ -956,8 +957,9 @@ export const PhotoGrid: React.FC = React.memo(() => {
 
     const toggleRatingFilter = useCallback((rating: number) => {
         const next: any = { ...filters };
-        if (next.rating?.min === rating) delete next.rating;
-        else next.rating = { min: rating };
+        // Exact match: 4★ shows photos rated exactly 4, never the 5★ ones.
+        if (next.rating?.min === rating && next.rating?.max === rating) delete next.rating;
+        else next.rating = { min: rating, max: rating };
         setFilters(next);
     }, [filters, setFilters]);
 
@@ -1079,7 +1081,7 @@ export const PhotoGrid: React.FC = React.memo(() => {
                                     key={rating}
                                     onClick={() => toggleRatingFilter(rating)}
                                     className="p-0.5 hover:bg-white/10 rounded"
-                                    title={`${rating}★ et plus`}
+                                    title={`Exactement ${rating}★`}
                                 >
                                     <Star
                                         size={14}
