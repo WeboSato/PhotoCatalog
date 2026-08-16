@@ -1,6 +1,6 @@
 {
     "name": "photocatalog",
-    "version": "1.0.0",
+    "version": "1.4.0",
     "description": "Professional photo catalog and management application inspired by Adobe Lightroom",
     "main": "dist/main/main/main.js",
     "scripts": {
