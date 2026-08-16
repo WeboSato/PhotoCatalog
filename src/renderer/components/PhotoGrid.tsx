@@ -1,7 +1,7 @@
 import React, { useCallback, useState, useRef, useEffect, useMemo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useCatalogStore, Photo, DevelopmentSettings, defaultDevelopmentSettings } from '../stores/catalogStore';
-import { Minus, Plus, RotateCcw, RotateCw, Trash2, Star, X } from 'lucide-react';
+import { Minus, Plus, RotateCcw, RotateCw, Trash2, Star, X, Check } from 'lucide-react';
 import { getThumbnailUrl, PLACEHOLDER_IMAGE } from '../utils/imageUrl';
 import { decode } from 'blurhash';
 import { DeleteDialog } from './DeleteDialog';

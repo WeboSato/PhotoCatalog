@@ -249,7 +249,6 @@ export const Sidebar: React.FC = React.memo(() => {
         setActiveCollectionId(null);
         setActiveFolderId(null);
         setFilters({});
-        setActivePersonId(null);
     };
 
     return (
