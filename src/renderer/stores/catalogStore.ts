@@ -350,6 +350,16 @@ export const useCatalogStore = create<CatalogState>()(
         const state = get();
         let photoSettings: DevelopmentSettings | null = null;
 
+        // Ratings, color labels and flags act on the selection — so the selection
+        // has to follow the photo actually on screen. Loupe/Develop arrows, the
+        // filmstrip, the map and the people view all move the active photo without
+        // touching the selection, which meant pressing 1-5 rated whatever was
+        // selected back in the grid instead of the photo being viewed. Navigating
+        // onto a photo outside the selection now makes it the selection; stepping
+        // around inside a deliberate multi-selection leaves that selection intact.
+        const keepSelection = !id || state.selectedPhotoIds.has(id);
+        const selectedPhotoIds = keepSelection ? state.selectedPhotoIds : new Set([id]);
+
         if (id) {
             // First check the in-memory cache (Record instead of Map)
             photoSettings = state.photoDevSettings[id] || null;
@@ -366,6 +376,7 @@ export const useCatalogStore = create<CatalogState>()(
                         // Cache it (Record spread instead of new Map)
                         set({
                             activePhotoId: id,
+                            selectedPhotoIds,
                             developmentSettings: photoSettings,
                             photoDevSettings: { ...state.photoDevSettings, [id]: photoSettings }
                         });
@@ -379,6 +390,7 @@ export const useCatalogStore = create<CatalogState>()(
 
         set({
             activePhotoId: id,
+            selectedPhotoIds,
             developmentSettings: photoSettings || defaultDevelopmentSettings
         });
     },

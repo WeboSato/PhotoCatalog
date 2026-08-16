@@ -514,7 +514,9 @@ export const DevelopView: React.FC = () => {
             } else if (e.key === '-') {
                 e.preventDefault();
                 setZoom(z => Math.max(0.25, z - 0.25));
-            } else if (e.key === '0') {
+            } else if (e.key === '0' && (e.metaKey || e.ctrlKey)) {
+                // Cmd/Ctrl+0 resets zoom; a bare 0 is the global "clear rating"
+                // shortcut and must not also refit the view.
                 e.preventDefault();
                 setZoom(1);
             } else if (e.key === 'ArrowLeft' && currentIndex > 0) {
@@ -603,7 +605,7 @@ export const DevelopView: React.FC = () => {
                         <button onClick={() => setZoom(z => Math.max(0.25, z - 0.25))} className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded" title="Zoom - (-)">
                             <ZoomOut size={16} />
                         </button>
-                        <button onClick={() => setZoom(1)} className="text-xs text-gray-400 w-12 text-center hover:text-white cursor-pointer" title="Reset zoom (0)">
+                        <button onClick={() => setZoom(1)} className="text-xs text-gray-400 w-12 text-center hover:text-white cursor-pointer" title="Reset zoom (⌘0)">
                             {Math.round(zoom * 100)}%
                         </button>
                         <button onClick={() => setZoom(z => Math.min(4, z + 0.25))} className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded" title="Zoom + (+)">

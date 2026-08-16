@@ -662,6 +662,27 @@ export const PhotoGrid: React.FC = React.memo(() => {
         }
     }, [firstVisibleRow, lastVisibleRow, columnCount, photos]);
 
+    // Come back to where you were. App unmounts the grid when a photo is opened
+    // (loupe/develop/map/people), so returning re-created it scrolled to the very
+    // top — on a 20k-photo library the photo you were just looking at was
+    // thousands of rows away and effectively lost. Scroll it back into view,
+    // centered, once per mount so later clicks never yank the grid around.
+    // The target is captured at mount — using the live activePhotoId would re-center
+    // the grid every time the user simply clicks a photo.
+    const [restoreTargetId] = useState(() => getStore().activePhotoId);
+    const restoredRef = useRef(false);
+    useEffect(() => {
+        if (restoredRef.current) return;
+        if (!restoreTargetId || photos.length === 0 || containerWidth === 0) return;
+        const index = photos.findIndex(p => p.id === restoreTargetId);
+        if (index < 0) return;
+        restoredRef.current = true;
+        // Let the freshly-mounted virtualizer measure before asking it to scroll.
+        requestAnimationFrame(() => {
+            rowVirtualizer.scrollToIndex(Math.floor(index / columnCount), { align: 'center' });
+        });
+    }, [restoreTargetId, photos, containerWidth, columnCount, rowVirtualizer]);
+
     // Selection changes are now read directly from the store (no duplicated subscribe)
 
     // Track container size - ResizeObserver only (removed setTimeout fallbacks)

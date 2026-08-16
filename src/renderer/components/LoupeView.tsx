@@ -149,7 +149,13 @@ export const LoupeView: React.FC = () => {
                     handleZoomOut();
                     break;
                 case '0':
-                    handleZoomFit();
+                    // Fit is Cmd/Ctrl+0. A bare 0 is the global "clear rating"
+                    // shortcut — handling it here too meant one keypress both
+                    // refit the view and silently wiped the photo's stars.
+                    if (e.metaKey || e.ctrlKey) {
+                        e.preventDefault();
+                        handleZoomFit();
+                    }
                     break;
             }
         };
@@ -320,7 +326,7 @@ export const LoupeView: React.FC = () => {
                     <button
                         onClick={handleZoomFit}
                         className={`px-2 py-1 text-sm rounded ${zoom === 1 ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}
-                        title="Fit to screen (0)"
+                        title="Fit to screen (⌘0)"
                     >
                         FIT
                     </button>
