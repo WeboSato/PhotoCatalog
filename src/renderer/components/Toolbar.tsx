@@ -21,7 +21,8 @@ import {
     Settings,
     MoreHorizontal,
     AlertCircle,
-    RefreshCw
+    RefreshCw,
+    BookOpen
 } from 'lucide-react';
 
 // View mode configuration
@@ -32,6 +33,7 @@ const VIEW_MODES = [
     { mode: 'map' as const, icon: Map, title: 'Map View' },
     { mode: 'develop' as const, icon: Aperture, title: 'Develop View (D)' },
     { mode: 'aiface' as const, icon: ScanFace, title: 'AIFACE - People' },
+    { mode: 'album' as const, icon: BookOpen, title: 'Album / Livre photo (B)' },
 ] as const;
 
 const COLOR_LABELS = [
@@ -131,7 +133,7 @@ const AdvancedKeywordFilter: React.FC = () => {
             <button
                 onClick={() => setIsOpen(!isOpen)}
                 className={`p-1.5 rounded transition-colors ${
-                    activeKeyword ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                    activeKeyword ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800'
                 }`}
                 title="Filter by keyword"
             >
@@ -163,7 +165,7 @@ const AdvancedKeywordFilter: React.FC = () => {
                                     placeholder="Search keywords..."
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
-                                    className="w-full pl-8 pr-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
+                                    className="w-full pl-8 pr-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-white placeholder-gray-400 focus:outline-none focus:border-white/40"
                                 />
                             </div>
                         </div>
@@ -175,7 +177,7 @@ const AdvancedKeywordFilter: React.FC = () => {
                                     onClick={() => setActiveCategory(category === 'all' ? null : category)}
                                     className={`px-2 py-1 text-xs rounded ${
                                         activeCategory === category || (activeCategory === null && category === 'all')
-                                            ? 'bg-blue-600 text-white'
+                                            ? 'bg-white/10 text-white'
                                             : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
                                     }`}
                                 >
@@ -195,7 +197,7 @@ const AdvancedKeywordFilter: React.FC = () => {
                                         key={kw.id}
                                         onClick={() => handleKeywordClick(kw.name)}
                                         className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-700 flex items-center justify-between
-                                            ${activeKeyword?.includes(kw.name) ? 'text-blue-400 bg-gray-700/50' : 'text-gray-300'}`}
+                                            ${activeKeyword?.includes(kw.name) ? 'text-gray-200 bg-gray-700/50' : 'text-gray-300'}`}
                                     >
                                         <span className="truncate">{kw.name}</span>
                                         <span className="text-xs text-gray-500 ml-2">{kw.photo_count || 0}</span>
@@ -232,7 +234,7 @@ const ProcessingIndicator: React.FC = () => {
 
     return (
         <div className="relative group">
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-900/50 rounded-lg text-xs text-blue-300 hover:bg-blue-800/50 transition-colors cursor-pointer"
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-white/5 rounded-lg text-xs text-gray-300 hover:bg-white/15 transition-colors cursor-pointer"
                  onClick={() => setShowDetails(!showDetails)}>
                 <Loader2 size={14} className="animate-spin" />
                 <span>Processing {progress.current}/{progress.total} ({percent}%)</span>
@@ -461,7 +463,7 @@ const Toolbar: React.FC = () => {
         useCatalogStore.getState().clearFilters();
     };
 
-    const handleViewMode = (mode: 'grid' | 'loupe' | 'survey' | 'map' | 'develop' | 'aiface') => {
+    const handleViewMode = (mode: 'grid' | 'loupe' | 'survey' | 'map' | 'develop' | 'aiface' | 'album') => {
         useCatalogStore.getState().setViewMode(mode);
     };
 
@@ -478,7 +480,7 @@ const Toolbar: React.FC = () => {
     };
 
     return (
-        <div className="h-14 bg-gray-900 border-b border-gray-700 flex items-center justify-between px-3 gap-2">
+        <div className="h-14 bg-gray-900/55 backdrop-blur-2xl border-b border-white/10 flex items-center justify-between px-3 gap-2">
             {/* Left section */}
             <div className="flex items-center gap-2">
                 <button
@@ -517,7 +519,7 @@ const Toolbar: React.FC = () => {
                         placeholder="Search photos, keywords, faces..."
                         value={localSearch}
                         onChange={handleSearchChange}
-                        className="w-full pl-10 pr-12 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                        className="w-full pl-10 pr-12 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white placeholder-gray-500 focus:outline-none focus:border-white/40 focus:ring-1 focus:ring-white/30"
                     />
                     <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1">
                         <button

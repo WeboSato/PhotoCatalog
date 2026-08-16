@@ -104,9 +104,9 @@ const FolderTreeItem: React.FC<FolderTreeItemProps> = ({
                 onDrop={(e) => onDrop(e, folder)}
                 className={`w-full flex items-center gap-1 px-2 py-1 text-sm rounded transition-colors group
                     ${isActive
-                        ? 'bg-blue-600 text-white'
+                        ? 'bg-white/10 text-white'
                         : isDragOver
-                            ? 'bg-blue-500/30 text-white border border-blue-500 border-dashed'
+                            ? 'bg-white/10 text-white border border-white/25 border-dashed'
                             : 'text-gray-300 hover:bg-gray-800 hover:text-white'
                     }`}
                 style={{ paddingLeft: `${8 + level * 12}px` }}
@@ -135,7 +135,7 @@ const FolderTreeItem: React.FC<FolderTreeItemProps> = ({
 
                 {/* Photo count */}
                 {folder.photo_count > 0 && (
-                    <span className={`text-xs ${isActive ? 'text-blue-200' : 'text-gray-500'}`}>
+                    <span className={`text-xs ${isActive ? 'text-gray-400' : 'text-gray-500'}`}>
                         {folder.photo_count}
                     </span>
                 )}
@@ -260,7 +260,7 @@ const FolderContextMenuComponent: React.FC<{
                 {folder.name}
             </div>
             <button
-                className="w-full px-3 py-2 text-left text-sm text-blue-400 hover:bg-blue-600 hover:text-white flex items-center gap-2"
+                className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-white/15 hover:text-white flex items-center gap-2"
                 onClick={onSync}
                 disabled={isSyncing}
             >
@@ -268,7 +268,7 @@ const FolderContextMenuComponent: React.FC<{
                 {isSyncing ? 'Syncing...' : 'Sync this folder'}
             </button>
             <button
-                className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-blue-600 hover:text-white flex items-center gap-2"
+                className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-white/15 hover:text-white flex items-center gap-2"
                 onClick={onShowInFinder}
             >
                 <FolderInput size={14} />

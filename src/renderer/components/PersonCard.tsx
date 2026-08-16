@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User } from 'lucide-react';
+import { getImageUrl as toLocalUrl } from '../utils/imageUrl';
 
 export interface PersonWithThumbnail {
     id: string;
@@ -16,6 +17,7 @@ export interface PersonWithThumbnail {
         box_height: number;
         thumbnail_path?: string;
         file_path?: string;
+        face_crop_path?: string; // pre-generated square crop (Layer 2)
     };
 }
 
@@ -34,103 +36,28 @@ export const PersonCard: React.FC<PersonCardProps> = ({
 }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [editName, setEditName] = useState(person.name);
-    const [imgStyle, setImgStyle] = useState<React.CSSProperties>({
-        position: 'absolute',
-        width: '100%',
-        height: '100%',
-        objectFit: 'cover' as const,
-        opacity: 0,
-    });
     const [imgError, setImgError] = useState(false);
-    const containerRef = useRef<HTMLDivElement>(null);
 
-    // Get the image URL for the face thumbnail
-    const getImageUrl = () => {
-        if (person.face?.thumbnail_path) {
-            return `local-image://${person.face.thumbnail_path}`;
-        }
-        if (person.face?.file_path) {
-            return `local-image://${person.face.file_path}`;
-        }
-        return null;
-    };
+    const face = person.face;
 
-    const imageUrl = getImageUrl();
+    // Prefer the pre-generated square face crop; otherwise the DECODABLE 512 webp
+    // thumbnail (never the raw/.nef/.psd original — that is the blank-card cause).
+    // URLs are encoded via utils/imageUrl (the exact inverse of the protocol
+    // handler's per-segment decodeURIComponent).
+    const imageUrl = face?.face_crop_path
+        ? toLocalUrl(face.face_crop_path)
+        : (face?.thumbnail_path ? toLocalUrl(face.thumbnail_path) : null);
+    const usingCrop = !!face?.face_crop_path;
 
-    // When image loads, calculate positioning to center the face
-    const handleImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
-        const img = e.currentTarget;
-        const container = containerRef.current;
-        if (!container || !person.face) {
-            setImgStyle({
-                position: 'absolute',
-                width: '100%',
-                height: '100%',
-                objectFit: 'cover' as const,
-                opacity: 1,
-            });
-            return;
-        }
+    // For the thumbnail fallback: statically position the cover-crop on the face
+    // box center (the pre-generated crop is already square+centered, so it needs none).
+    const objectPosition = face && face.box_width > 0
+        ? `${Math.min(100, Math.max(0, (face.box_x + face.box_width / 2) * 100))}% ` +
+          `${Math.min(100, Math.max(0, (face.box_y + face.box_height / 2) * 100))}%`
+        : '50% 50%';
 
-        const { box_x, box_y, box_width, box_height } = person.face;
-        if (!box_width || !box_height || box_width <= 0 || box_height <= 0) {
-            setImgStyle({
-                position: 'absolute',
-                width: '100%',
-                height: '100%',
-                objectFit: 'cover' as const,
-                opacity: 1,
-            });
-            return;
-        }
-
-        const imgNatW = img.naturalWidth;
-        const imgNatH = img.naturalHeight;
-        const containerSize = container.clientWidth; // square container
-
-        // Face region in pixels on the original image
-        const faceX = box_x * imgNatW;
-        const faceY = box_y * imgNatH;
-        const faceW = box_width * imgNatW;
-        const faceH = box_height * imgNatH;
-        const faceCenterX = faceX + faceW / 2;
-        const faceCenterY = faceY + faceH / 2;
-
-        // We want the face to occupy about 50% of the card
-        // so we need to scale such that face dimension = 50% of container
-        const faceLargestDim = Math.max(faceW, faceH);
-        const targetFaceSize = containerSize * 0.5;
-        let scale = targetFaceSize / faceLargestDim;
-
-        // Clamp scale: don't shrink below fitting the container, don't zoom more than 5x
-        const minScaleToFit = containerSize / Math.min(imgNatW, imgNatH);
-        scale = Math.max(scale, minScaleToFit);
-        scale = Math.min(scale, 5);
-
-        // Scaled image dimensions
-        const scaledW = imgNatW * scale;
-        const scaledH = imgNatH * scale;
-
-        // Position image so face center is at container center
-        let left = containerSize / 2 - faceCenterX * scale;
-        let top = containerSize / 2 - faceCenterY * scale;
-
-        // Clamp so we don't show empty space outside the image
-        // Image must cover the entire container
-        left = Math.min(left, 0);
-        top = Math.min(top, 0);
-        left = Math.max(left, containerSize - scaledW);
-        top = Math.max(top, containerSize - scaledH);
-
-        setImgStyle({
-            position: 'absolute',
-            left: `${left}px`,
-            top: `${top}px`,
-            width: `${scaledW}px`,
-            height: `${scaledH}px`,
-            opacity: 1,
-        });
-    };
+    // Reset the error state if the person's face source changes.
+    useEffect(() => { setImgError(false); }, [imageUrl]);
 
     const handleNameClick = (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -165,17 +92,17 @@ export const PersonCard: React.FC<PersonCardProps> = ({
             onClick={onClick}
             className={`group relative rounded-2xl overflow-hidden bg-gray-800
                         shadow-lg hover:shadow-2xl transition-all cursor-pointer
-                        hover:scale-[1.03] ${isActive ? 'ring-3 ring-blue-500' : ''}`}
+                        hover:scale-[1.03] ${isActive ? 'ring-3 ring-white/40' : ''}`}
         >
             {/* Face image container - square aspect ratio */}
-            <div ref={containerRef} className="relative w-full aspect-square overflow-hidden bg-gray-700">
+            <div className="relative w-full aspect-square overflow-hidden bg-gray-700">
                 {imageUrl && !imgError ? (
                     <img
                         src={imageUrl}
                         alt={person.name}
-                        style={imgStyle}
+                        className="absolute inset-0 w-full h-full object-cover"
+                        style={usingCrop ? undefined : { objectPosition }}
                         loading="lazy"
-                        onLoad={handleImageLoad}
                         onError={() => setImgError(true)}
                     />
                 ) : (

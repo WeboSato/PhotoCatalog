@@ -36,7 +36,7 @@ export const DeleteDialog: React.FC<DeleteDialogProps> = ({
             />
 
             {/* Dialog - wider when showing photos */}
-            <div className={`relative bg-gray-800 rounded-lg shadow-2xl border border-gray-700 overflow-hidden ${hasPhotosToShow ? 'w-[700px] max-h-[80vh]' : 'w-[420px]'}`}>
+            <div className={`relative glass-strong rounded-xl shadow-2xl overflow-hidden ${hasPhotosToShow ? 'w-[700px] max-h-[80vh]' : 'w-[420px]'}`}>
                 {/* Header */}
                 <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
                     <h2 className="text-lg font-semibold text-white">
@@ -114,7 +114,7 @@ export const DeleteDialog: React.FC<DeleteDialogProps> = ({
                             <EyeOff size={20} className="text-white" />
                         </div>
                         <div className="flex-1">
-                            <h3 className="text-white font-medium group-hover:text-blue-300">
+                            <h3 className="text-white font-medium group-hover:text-white">
                                 Hide from library
                             </h3>
                             <p className="text-gray-400 text-xs mt-0.5">

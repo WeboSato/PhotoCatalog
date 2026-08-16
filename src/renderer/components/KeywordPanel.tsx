@@ -176,7 +176,7 @@ export const KeywordPanel: React.FC = () => {
                                         key={keyword.id}
                                         onClick={() => handleRemoveKeyword(keyword.id)}
                                         disabled={isLoading}
-                                        className="flex items-center gap-1 px-2 py-1 bg-blue-600 text-white text-xs rounded-full hover:bg-blue-700 transition-colors group"
+                                        className="flex items-center gap-1 px-2 py-1 bg-white/10 text-white text-xs rounded-full hover:bg-white/20 transition-colors group"
                                     >
                                         <span>{keyword.name}</span>
                                         <X size={12} className="opacity-60 group-hover:opacity-100" />
@@ -203,7 +203,7 @@ export const KeywordPanel: React.FC = () => {
                                     }}
                                     placeholder="New keyword..."
                                     autoFocus
-                                    className="flex-1 px-2 py-1 text-xs bg-gray-700 border border-gray-600 rounded text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                                    className="flex-1 px-2 py-1 text-xs bg-gray-700 border border-gray-600 rounded text-white placeholder-gray-500 focus:outline-none focus:border-white/40"
                                 />
                                 <button
                                     onClick={handleCreateKeyword}

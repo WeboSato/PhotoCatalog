@@ -9,7 +9,19 @@ process.on('uncaughtException', (err: Error & { code?: string }) => {
 import { app, BrowserWindow, ipcMain, dialog, Menu, shell, protocol, net, clipboard } from 'electron';
 import path from 'path';
 import fs from 'fs';
+import { Readable } from 'stream';
 import os from 'os';
+
+// Built once (not per request) — used by the local-image protocol handler.
+const IMAGE_MIME_TYPES: Record<string, string> = {
+    'webp': 'image/webp',
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'png': 'image/png',
+    'gif': 'image/gif',
+    'tiff': 'image/tiff',
+    'tif': 'image/tiff'
+};
 
 import catalogDb from '../database/Database';
 import thumbnailService from '../services/ThumbnailService';
@@ -22,9 +34,20 @@ import { XmpService } from './services/XmpService';
 import settingsService from './services/SettingsService';
 import catalogManagerService from './services/CatalogManagerService';
 import { updateService } from './services/UpdateService';
+import albumExportService from './services/AlbumExportService';
+import albumAgentService from './services/AlbumAgentService';
+import { reclusterAllFaces } from '../services/FaceClusteringService';
 import crypto from 'crypto';
 
 let mainWindow: BrowserWindow | null = null;
+
+// Give Chromium's HTTP disk cache room for the whole thumbnail set — the default
+// (~a few hundred MB) evicts a 20k-photo library long before "forever".
+app.commandLine.appendSwitch('disk-cache-size', String(4 * 1024 * 1024 * 1024));
+
+// Where each image response came from — logged at milestones so cache behaviour
+// is observable in the wild (SSD mirror vs external disk vs 304 revalidation).
+const imageServeStats = { mirror: 0, disk: 0, notModified: 0 };
 
 // Recover thumbnails that exist on disk but not in DB (crash recovery)
 async function recoverExistingThumbnails(photos: any[]): Promise<number> {
@@ -55,6 +78,83 @@ async function recoverExistingThumbnails(photos: any[]): Promise<number> {
 }
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+
+// Verify the catalog's storage volume is mounted before we touch the database.
+// The catalog (and images) typically live on an external SSD. If that drive is
+// not connected, opening a SQLite DB at the missing path would CREATE a fresh,
+// empty catalog at the dead mount point — and the startup background jobs
+// (thumbnail regen, AI auto-tagging) would then run against it, effectively
+// corrupting/overwriting the real library once the drive comes back.
+//
+// Instead we block startup with a clear "connect your drive" prompt and never
+// initialize the DB on a missing path. Returns false if the user chooses to quit.
+function ensureCatalogAvailable(): boolean {
+    const catalogDir = settingsService.get('catalogPath');
+
+    // No custom location => catalog lives in userData, which is always present.
+    if (!catalogDir || catalogDir.length === 0) {
+        return true;
+    }
+
+    const isAvailable = (): boolean => {
+        try {
+            return fs.existsSync(catalogDir) && fs.statSync(catalogDir).isDirectory();
+        } catch {
+            return false;
+        }
+    };
+
+    while (!isAvailable()) {
+        const driveName = catalogDir.startsWith('/Volumes/')
+            ? catalogDir.split('/')[2]
+            : catalogDir;
+
+        const choice = dialog.showMessageBoxSync({
+            type: 'warning',
+            title: 'Catalogue indisponible',
+            message: 'Le disque du catalogue n’est pas connecté',
+            detail:
+                `PhotoCatalog ne trouve pas son catalogue à l’emplacement :\n${catalogDir}\n\n` +
+                `Branche le disque « ${driveName} » puis clique sur Réessayer.\n\n` +
+                'Aucun nouveau catalogue ne sera créé : ta bibliothèque ne risque pas d’être corrompue.',
+            buttons: ['Réessayer', 'Quitter'],
+            defaultId: 0,
+            cancelId: 1,
+            noLink: true
+        });
+
+        if (choice === 1) {
+            return false; // user chose to quit
+        }
+        // otherwise loop and re-check after they (hopefully) plugged the drive in
+    }
+
+    return true;
+}
+
+// Point the dock/taskbar at the freshly-built RGBA icon at runtime. In a packaged
+// build macOS uses the bundle's .icns automatically, but this also fixes the dev
+// run (electron .) where the icon would otherwise be the default Electron diamond.
+function setRuntimeAppIcon(): void {
+    if (process.platform !== 'darwin' || !app.dock) {
+        return;
+    }
+    const candidates = [
+        path.join(process.resourcesPath || '', 'resources', 'icon.png'),
+        path.join(app.getAppPath(), 'resources', 'icon.png'),
+        path.join(__dirname, '..', '..', '..', 'resources', 'icon.png')
+    ];
+    for (const iconPath of candidates) {
+        try {
+            if (fs.existsSync(iconPath)) {
+                app.dock.setIcon(iconPath);
+                break;
+            }
+        } catch {
+            // ignore and try next candidate
+        }
+    }
+}
 
 // Get system info for bug reports
 function getSystemInfo(): string {
@@ -124,10 +224,10 @@ function createWindow(): void {
     // Initialize update service
     updateService.setMainWindow(mainWindow);
 
-    // Check for updates silently on startup (after 5 seconds)
-    setTimeout(() => {
-        updateService.checkForUpdates(true);
-    }, 5000);
+    // NOTE: the automatic startup update check is intentionally disabled. The app
+    // is distributed unsigned/un-notarized, so a downloaded DMG is blocked by
+    // Gatekeeper and the "Download Update" prompt is a dead end. Updates remain
+    // available on demand via the "Check for Updates…" menu item.
 
     createMenu();
 }
@@ -231,30 +331,33 @@ function createMenu(): void {
             submenu: [
                 {
                     label: 'Set Rating',
+                    // No single-key accelerators here: they fire even while typing in a
+                    // text field (e.g. an album name). The renderer handles 0-9 / P/U/X /
+                    // G/E/N via a guarded keydown listener instead.
                     submenu: [
-                        { label: 'No Rating', accelerator: '0', click: () => mainWindow?.webContents.send('photo:rating', 0) },
-                        { label: '1 Star', accelerator: '1', click: () => mainWindow?.webContents.send('photo:rating', 1) },
-                        { label: '2 Stars', accelerator: '2', click: () => mainWindow?.webContents.send('photo:rating', 2) },
-                        { label: '3 Stars', accelerator: '3', click: () => mainWindow?.webContents.send('photo:rating', 3) },
-                        { label: '4 Stars', accelerator: '4', click: () => mainWindow?.webContents.send('photo:rating', 4) },
-                        { label: '5 Stars', accelerator: '5', click: () => mainWindow?.webContents.send('photo:rating', 5) }
+                        { label: 'No Rating (0)', click: () => mainWindow?.webContents.send('photo:rating', 0) },
+                        { label: '1 Star (1)', click: () => mainWindow?.webContents.send('photo:rating', 1) },
+                        { label: '2 Stars (2)', click: () => mainWindow?.webContents.send('photo:rating', 2) },
+                        { label: '3 Stars (3)', click: () => mainWindow?.webContents.send('photo:rating', 3) },
+                        { label: '4 Stars (4)', click: () => mainWindow?.webContents.send('photo:rating', 4) },
+                        { label: '5 Stars (5)', click: () => mainWindow?.webContents.send('photo:rating', 5) }
                     ]
                 },
                 {
                     label: 'Set Flag',
                     submenu: [
-                        { label: 'Picked', accelerator: 'P', click: () => mainWindow?.webContents.send('photo:flag', 'picked') },
-                        { label: 'Unflagged', accelerator: 'U', click: () => mainWindow?.webContents.send('photo:flag', 'none') },
-                        { label: 'Rejected', accelerator: 'X', click: () => mainWindow?.webContents.send('photo:flag', 'rejected') }
+                        { label: 'Picked (P)', click: () => mainWindow?.webContents.send('photo:flag', 'picked') },
+                        { label: 'Unflagged (U)', click: () => mainWindow?.webContents.send('photo:flag', 'none') },
+                        { label: 'Rejected (X)', click: () => mainWindow?.webContents.send('photo:flag', 'rejected') }
                     ]
                 },
                 {
                     label: 'Set Color Label',
                     submenu: [
-                        { label: 'None', accelerator: '6', click: () => mainWindow?.webContents.send('photo:color', 'none') },
-                        { label: 'Red', accelerator: '7', click: () => mainWindow?.webContents.send('photo:color', 'red') },
-                        { label: 'Yellow', accelerator: '8', click: () => mainWindow?.webContents.send('photo:color', 'yellow') },
-                        { label: 'Green', accelerator: '9', click: () => mainWindow?.webContents.send('photo:color', 'green') },
+                        { label: 'None (6)', click: () => mainWindow?.webContents.send('photo:color', 'none') },
+                        { label: 'Red (7)', click: () => mainWindow?.webContents.send('photo:color', 'red') },
+                        { label: 'Yellow (8)', click: () => mainWindow?.webContents.send('photo:color', 'yellow') },
+                        { label: 'Green (9)', click: () => mainWindow?.webContents.send('photo:color', 'green') },
                         { label: 'Blue', click: () => mainWindow?.webContents.send('photo:color', 'blue') },
                         { label: 'Purple', click: () => mainWindow?.webContents.send('photo:color', 'purple') }
                     ]
@@ -271,18 +374,15 @@ function createMenu(): void {
             label: 'View',
             submenu: [
                 {
-                    label: 'Grid View',
-                    accelerator: 'G',
+                    label: 'Grid View (G)',
                     click: () => mainWindow?.webContents.send('view:mode', 'grid')
                 },
                 {
-                    label: 'Loupe View',
-                    accelerator: 'E',
+                    label: 'Loupe View (E)',
                     click: () => mainWindow?.webContents.send('view:mode', 'loupe')
                 },
                 {
-                    label: 'Rating',
-                    accelerator: 'N',
+                    label: 'Rating (N)',
                     click: () => mainWindow?.webContents.send('view:mode', 'survey')
                 },
                 { type: 'separator' },
@@ -496,37 +596,60 @@ app.whenReady().then(async () => {
         const rawPath = request.url.replace('local-image://', '');
         const filePath = rawPath.split('/').map(part => decodeURIComponent(part)).join('/');
 
-        // Check if file exists
-        const fs = require('fs');
-        if (!fs.existsSync(filePath)) {
-            console.error('[Protocol] File not found:', filePath.substring(0, 100));
-            return new Response('File not found', { status: 404 });
-        }
-
-        // Read file directly and return with correct content-type
         try {
-            const data = fs.readFileSync(filePath);
-            const ext = filePath.split('.').pop()?.toLowerCase();
-            const mimeTypes: Record<string, string> = {
-                'webp': 'image/webp',
-                'jpg': 'image/jpeg',
-                'jpeg': 'image/jpeg',
-                'png': 'image/png',
-                'gif': 'image/gif',
-                'tiff': 'image/tiff',
-                'tif': 'image/tiff'
-            };
-            const contentType = mimeTypes[ext || ''] || 'application/octet-stream';
+            // Thumbnails living on an external drive are mirrored to the internal
+            // SSD on first serve — later reads (and every relaunch) skip the slow
+            // disk entirely. The mirror stat doubles as the existence check.
+            const isThumb = thumbnailService.isCachedFile(filePath);
+            const mirrored = isThumb ? await thumbnailService.mirrorLookup(filePath) : null;
 
-            return new Response(data, {
-                status: 200,
-                headers: {
-                    'Content-Type': contentType,
-                    'Access-Control-Allow-Origin': '*',
-                    'Cache-Control': 'max-age=3600'
-                }
-            });
-        } catch (err) {
+            // Async stat instead of existsSync — never blocks the main thread, and
+            // gives us mtime/size for an ETag so we can answer revalidations cheaply.
+            const stat = mirrored ?? await fs.promises.stat(filePath);
+            const serveFrom = mirrored ? mirrored.path : filePath;
+            if (isThumb && !mirrored) {
+                // Fire-and-forget: the streamed read below warms the OS page cache,
+                // so this copy costs (almost) no extra HDD I/O.
+                const st = stat as { atime?: Date; mtime: Date };
+                void thumbnailService.mirrorStore(filePath, { atime: st.atime ?? st.mtime, mtime: st.mtime });
+            }
+
+            const ext = filePath.split('.').pop()?.toLowerCase();
+            const contentType = IMAGE_MIME_TYPES[ext || ''] || 'application/octet-stream';
+
+            // Validator tracks size+mtime — the mirror preserves both, so the ETag
+            // is identical whichever disk serves. Regenerated thumbnails (mtime
+            // changes) refetch automatically; unchanged files revalidate for free.
+            const etag = `"${stat.size}-${Math.round(stat.mtimeMs)}"`;
+            if (request.headers.get('if-none-match') === etag) {
+                imageServeStats.notModified++;
+                return new Response(null, { status: 304 });
+            }
+
+            if (mirrored) imageServeStats.mirror++; else imageServeStats.disk++;
+            const total = imageServeStats.mirror + imageServeStats.disk + imageServeStats.notModified;
+            if (total === 25 || total === 100 || total % 1000 === 0) {
+                console.log(`[local-image] ${total} served: ${imageServeStats.mirror} ssd-mirror, ${imageServeStats.disk} disk, ${imageServeStats.notModified} revalidated`);
+            }
+
+            const headers: Record<string, string> = {
+                'Content-Type': contentType,
+                'Access-Control-Allow-Origin': '*',
+                // Thumbnails are effectively immutable (regeneration bumps mtime →
+                // new ETag after expiry): cache for a month. Originals stay short.
+                'Cache-Control': isThumb ? 'public, max-age=2592000' : 'max-age=3600',
+                'ETag': etag,
+                'Last-Modified': stat.mtime.toUTCString()
+            };
+
+            // Stream off the libuv threadpool — the main process never buffers the
+            // whole file, so a burst of grid <img> requests can't serialize-block it.
+            const webStream = Readable.toWeb(fs.createReadStream(serveFrom)) as ReadableStream;
+            return new Response(webStream, { status: 200, headers });
+        } catch (err: any) {
+            if (err?.code === 'ENOENT') {
+                return new Response('File not found', { status: 404 });
+            }
             console.error('[Protocol] Error reading file:', err);
             return new Response('Error reading file', { status: 500 });
         }
@@ -579,6 +702,17 @@ app.whenReady().then(async () => {
         }
     });
 
+    // Point the dock at the freshly-built RGBA icon (mainly helps the dev run).
+    setRuntimeAppIcon();
+
+    // Block startup if the catalog's drive is not mounted. This must run BEFORE
+    // catalogDb.initialize(), otherwise an empty catalog would be created at the
+    // missing path and the background jobs would corrupt the real library.
+    if (!ensureCatalogAvailable()) {
+        app.quit();
+        return;
+    }
+
     // Initialize database with path from settings
     const catalogPath = settingsService.getCatalogDbPath();
     catalogDb.initialize(catalogPath);
@@ -602,12 +736,16 @@ app.whenReady().then(async () => {
     setTimeout(async () => {
         const photos = catalogDb.getAllPhotos(999999, 0);
 
-        // First: check if thumbnails exist on disk but not in DB (crash recovery)
-        const recoveredCount = await recoverExistingThumbnails(photos);
-
-        // Re-fetch to get updated list
-        const updatedPhotos = catalogDb.getAllPhotos(999999, 0);
-        const missingThumbnails = updatedPhotos.filter(p => !p.thumbnail_path);
+        // Fast path: if every photo already has a thumbnail (the normal case), skip
+        // the crash-recovery disk scan AND the second full re-load entirely. On a big
+        // library on an external HDD those scans were needless work every launch.
+        let missingThumbnails = photos.filter(p => !p.thumbnail_path);
+        if (missingThumbnails.length > 0) {
+            const recoveredCount = await recoverExistingThumbnails(photos);
+            if (recoveredCount > 0) {
+                missingThumbnails = catalogDb.getAllPhotos(999999, 0).filter(p => !p.thumbnail_path);
+            }
+        }
 
         if (missingThumbnails.length > 0) {
             const BATCH_SIZE = 3; // Process 3 at a time (lower to reduce CPU load)
@@ -654,8 +792,72 @@ app.whenReady().then(async () => {
             mainWindow?.webContents.send('photos:refresh');
         }
 
-        // Auto AI tagging for photos without keywords (background, low priority)
+        // Background: square face crops for people-view representatives (idempotent).
+        // Runs BEFORE AI tagging so the people view gets tight crops promptly rather
+        // than waiting behind a potentially long tagging pass. Thumbnails already
+        // exist (regenerated just above), which is all the crop source needs.
         try {
+            const res = await backfillFaceCrops();
+            if (res.generated > 0) console.log(`[FaceCrop] Backfilled ${res.generated} face crops`);
+        } catch (e) {
+            console.warn('[FaceCrop] Backfill skipped:', e);
+        }
+
+        // One fresh view of the library, shared by the two background passes below.
+        const libraryNow = missingThumbnails.length > 0 ? catalogDb.getAllPhotos(999999, 0) : photos;
+
+        // Trickle-mirror the thumbnail set to the internal SSD (no-op when the
+        // cache already lives there). Throttled to a few files/sec so it never
+        // competes with interactive reads; after one pass, scrolling and every
+        // relaunch serve thumbnails from the SSD instead of the external drive.
+        {
+            const thumbPaths = libraryNow.map((p: any) => p.thumbnail_path).filter(Boolean) as string[];
+            thumbnailService.warmMirror(thumbPaths).then(r => {
+                if (r.copied > 0) console.log(`[ThumbMirror] warm pass done: ${r.copied} copied to SSD (${r.skipped} already there)`);
+            }).catch(() => {});
+        }
+
+        // Backfill missing BlurHashes from existing thumbnails. Libraries indexed
+        // before blur_hash existed have NULL everywhere, so the grid could never
+        // show its blurred placeholders (spinners instead) and the agent's
+        // near-dup/stage-light logic ran blind. Hashes are computed from the tiny
+        // thumbnail (never the original), read through the SSD mirror when warmed,
+        // and rows fill in live so placeholders appear progressively.
+        {
+            const needing = (libraryNow as any[]).filter(p => !p.blur_hash && p.thumbnail_path);
+            if (needing.length > 0) {
+                console.log(`[BlurHash] Backfilling ${needing.length} photos from thumbnails…`);
+                let done = 0;
+                let lastRefresh = 0;
+                for (let i = 0; i < needing.length; i += 6) {
+                    const batch = needing.slice(i, i + 6);
+                    await Promise.all(batch.map(async p => {
+                        const m = await thumbnailService.mirrorLookup(p.thumbnail_path);
+                        const hash = await thumbnailService.blurHashFromFile(m ? m.path : p.thumbnail_path);
+                        if (hash) {
+                            catalogDb.updatePhoto(p.id, { blur_hash: hash });
+                            done++;
+                        }
+                    }));
+                    if (done - lastRefresh >= 2000) {
+                        lastRefresh = done;
+                        mainWindow?.webContents.send('photos:refresh');
+                    }
+                    await new Promise(r => setTimeout(r, 250));
+                }
+                mainWindow?.webContents.send('photos:refresh');
+                console.log(`[BlurHash] Backfill done: ${done}/${needing.length} photos`);
+            }
+        }
+
+        // Auto AI tagging for photos without keywords — OFF by default. On a large
+        // library on an external HDD this scanned all photos and ran ONNX on every
+        // launch, saturating the disk so the visible grid's thumbnails couldn't load.
+        // Opt in via the autoTagOnStartup setting; otherwise tag on demand only.
+        try {
+            if (!settingsService.get('autoTagOnStartup')) {
+                throw { skipped: true };
+            }
             const { initializeAI, analyzeImage } = await import('./services/AITaggingService');
             const aiReady = await initializeAI();
             if (aiReady) {
@@ -1025,6 +1227,22 @@ ipcMain.handle('collections:removePhotos', (_, collectionId: string, photoIds: s
     catalogDb.removePhotosFromCollection(collectionId, photoIds);
     return true;
 });
+
+// ===== Album / Photo Book operations =====
+ipcMain.handle('albums:getAll', () => catalogDb.getAlbums());
+ipcMain.handle('albums:create', (_, a: any) => catalogDb.createAlbum(a));
+ipcMain.handle('albums:update', (_, id: string, u: any) => { catalogDb.updateAlbum(id, u); return true; });
+ipcMain.handle('albums:delete', (_, id: string) => { catalogDb.deleteAlbum(id); return true; });
+ipcMain.handle('albums:getPages', (_, albumId: string) => catalogDb.getAlbumPages(albumId));
+ipcMain.handle('albums:savePages', (_, albumId: string, pages: any[]) => { catalogDb.saveAlbumPages(albumId, pages); return true; });
+ipcMain.handle('albums:getPhotosByIds', (_, ids: string[]) => catalogDb.getPhotosByIds(ids));
+ipcMain.handle('album:autoCurate', async (_, params: any) =>
+    albumAgentService.build(params, p => mainWindow?.webContents.send('album:progress', p)));
+
+ipcMain.handle('album:exportPdf', async (_, spec: any, savePath: string) =>
+    albumExportService.exportPdf(spec, savePath, p => mainWindow?.webContents.send('album:progress', p)));
+ipcMain.handle('album:exportSlideshow', async (_, spec: any, savePath: string) =>
+    albumExportService.exportSlideshow(spec, savePath, p => mainWindow?.webContents.send('album:progress', p)));
 
 // Keyword operations
 ipcMain.handle('keywords:getAll', () => {
@@ -1980,6 +2198,29 @@ ipcMain.handle('lightroom:importAll', async (event, catalogPath: string) => {
     });
 });
 
+// No-arg convenience wrappers used by SettingsModal: auto-pick the best Lightroom
+// catalog, then sync/import. Progress is sent on 'import:progress' (what the
+// Settings UI listens to via onImportProgress).
+ipcMain.handle('lightroom:syncAuto', async (event) => {
+    const best = lightroomImportService.findBestCatalog();
+    if (!best || !best.path) {
+        return { success: false, error: 'Aucun catalogue Lightroom trouvé sur ce Mac.' };
+    }
+    return lightroomImportService.syncMetadata(best.path, (current, total) => {
+        event.sender.send('import:progress', { current, total, status: 'Synchronisation Lightroom…' });
+    });
+});
+
+ipcMain.handle('lightroom:importAuto', async (event) => {
+    const best = lightroomImportService.findBestCatalog();
+    if (!best || !best.path) {
+        return { success: false, error: 'Aucun catalogue Lightroom trouvé sur ce Mac.' };
+    }
+    return lightroomImportService.importAllFromLightroom(best.path, (current, total, status) => {
+        event.sender.send('import:progress', { current, total, status: status || 'Import Lightroom…' });
+    });
+});
+
 // People/Face operations
 ipcMain.handle('people:getAll', () => {
     return catalogDb.getPeople();
@@ -2027,7 +2268,7 @@ ipcMain.handle('faces:delete', (_, faceId: string) => {
 });
 
 // Face clustering - groups similar unassigned faces into person entries
-ipcMain.handle('faces:cluster', () => {
+ipcMain.handle('faces:cluster', async () => {
     console.log('[Clustering] Starting face clustering...');
 
     // Get all unassigned faces with descriptors
@@ -2094,8 +2335,26 @@ ipcMain.handle('faces:cluster', () => {
         // Assign all faces in the cluster to this person
         catalogDb.bulkAssignFacesToPerson(cluster.faceIds, personId);
 
-        // Set the first face (highest confidence) as the thumbnail
-        catalogDb.updatePersonThumbnail(personId, cluster.faceIds[0]);
+        // Pick the LARGEST-box face as representative (faceIds[0] is max-confidence,
+        // which often picks a tiny/edge face) and generate its square crop now.
+        let repId = cluster.faceIds[0];
+        let bestArea = -1;
+        for (const fid of cluster.faceIds) {
+            const fr = catalogDb.getFaceWithPhoto(fid);
+            const area = (fr?.box_width || 0) * (fr?.box_height || 0);
+            if (area > bestArea) { bestArea = area; repId = fid; }
+        }
+        catalogDb.updatePersonThumbnail(personId, repId);
+
+        const rep = catalogDb.getFaceWithPhoto(repId);
+        if (rep?.file_path) {
+            const src = thumbnailService.getPreviewPath(rep.file_path)
+                ?? thumbnailService.getThumbnailPath(rep.file_path);
+            if (src) {
+                const out = await thumbnailService.generateFaceCrop(src, repId, rep);
+                if (out) catalogDb.setFaceCropPath(repId, out);
+            }
+        }
 
         facesAssigned += cluster.faceIds.length;
     }
@@ -2103,6 +2362,39 @@ ipcMain.handle('faces:cluster', () => {
     console.log(`[Clustering] Complete: ${clusters.length} people created, ${facesAssigned} faces assigned`);
 
     return { clustersCreated: clusters.length, facesAssigned };
+});
+
+// Generate square face crops for the ~representative faces the people view shows.
+// Non-blocking: batched with yields, crops from a DECODABLE webp (never raw).
+async function backfillFaceCrops(batchSize = 3): Promise<{ generated: number }> {
+    const rows = catalogDb.getFacesNeedingCrops();
+    let generated = 0;
+    for (let i = 0; i < rows.length; i += batchSize) {
+        const batch = rows.slice(i, i + batchSize);
+        await Promise.all(batch.map(async (r) => {
+            const src = thumbnailService.getPreviewPath(r.file_path)
+                ?? thumbnailService.getThumbnailPath(r.file_path)
+                ?? (r.thumbnail_path && fs.existsSync(r.thumbnail_path) ? r.thumbnail_path : null);
+            if (!src) return;
+            const out = await thumbnailService.generateFaceCrop(src, r.id, r);
+            if (out) { catalogDb.setFaceCropPath(r.id, out); generated++; }
+        }));
+        await new Promise(res => setTimeout(res, 50)); // yield
+        mainWindow?.webContents.send('faces:crop-progress', {
+            current: Math.min(i + batchSize, rows.length), total: rows.length
+        });
+    }
+    mainWindow?.webContents.send('faces:crop-progress', { current: 0, total: 0, done: true });
+    return { generated };
+}
+
+ipcMain.handle('faces:regenerateCrops', () => backfillFaceCrops());
+
+// Improved full re-clustering (centroid-based, merges, preserves renamed people).
+ipcMain.handle('faces:recluster', async () => {
+    return reclusterAllFaces(catalogDb, thumbnailService, (p) => {
+        mainWindow?.webContents.send('faces:recluster-progress', p);
+    });
 });
 
 // Get face statistics

@@ -80,7 +80,7 @@ export const NewCatalogDialog: React.FC<NewCatalogDialogProps> = ({
             <div className="absolute inset-0 bg-black/70" onClick={onClose} />
 
             {/* Dialog */}
-            <div className="relative bg-gray-800 rounded-lg shadow-2xl border border-gray-700 w-[500px] max-h-[90vh] overflow-hidden">
+            <div className="relative glass-strong rounded-xl shadow-2xl w-[500px] max-h-[90vh] overflow-hidden">
                 {/* Header */}
                 <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700 bg-green-900/30">
                     <div className="flex items-center gap-3">

@@ -5,6 +5,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 contextBridge.exposeInMainWorld('api', {
     // Dialog operations
     openDirectory: () => ipcRenderer.invoke('dialog:openDirectory'),
+    openDirectoryDialog: () => ipcRenderer.invoke('dialog:openDirectory'), // alias used by ImportDialog
     openFiles: (filters?: Electron.FileFilter[]) => ipcRenderer.invoke('dialog:openFiles', filters),
     saveFile: (options: Electron.SaveDialogOptions) => ipcRenderer.invoke('dialog:saveFile', options),
 
@@ -32,6 +33,23 @@ contextBridge.exposeInMainWorld('api', {
     getCollectionPhotos: (collectionId: string) => ipcRenderer.invoke('collections:getPhotos', collectionId),
     addPhotosToCollection: (collectionId: string, photoIds: string[]) => ipcRenderer.invoke('collections:addPhotos', collectionId, photoIds),
     removePhotosFromCollection: (collectionId: string, photoIds: string[]) => ipcRenderer.invoke('collections:removePhotos', collectionId, photoIds),
+
+    // Album / Photo Book operations
+    getAlbums: () => ipcRenderer.invoke('albums:getAll'),
+    createAlbum: (a: any) => ipcRenderer.invoke('albums:create', a),
+    updateAlbum: (id: string, u: any) => ipcRenderer.invoke('albums:update', id, u),
+    deleteAlbum: (id: string) => ipcRenderer.invoke('albums:delete', id),
+    getAlbumPages: (id: string) => ipcRenderer.invoke('albums:getPages', id),
+    saveAlbumPages: (id: string, pages: any[]) => ipcRenderer.invoke('albums:savePages', id, pages),
+    getPhotosByIds: (ids: string[]) => ipcRenderer.invoke('albums:getPhotosByIds', ids),
+    autoCurateAlbum: (params: any) => ipcRenderer.invoke('album:autoCurate', params),
+    exportAlbumPdf: (spec: any, savePath: string) => ipcRenderer.invoke('album:exportPdf', spec, savePath),
+    exportAlbumSlideshow: (spec: any, savePath: string) => ipcRenderer.invoke('album:exportSlideshow', spec, savePath),
+    onAlbumProgress: (callback: (p: any) => void) => {
+        const listener = (_e: any, p: any) => callback(p);
+        ipcRenderer.on('album:progress', listener);
+        return () => ipcRenderer.removeListener('album:progress', listener);
+    },
 
     // Keyword operations
     getKeywords: () => ipcRenderer.invoke('keywords:getAll'),
@@ -63,6 +81,7 @@ contextBridge.exposeInMainWorld('api', {
     importFiles: (filePaths: string[], options: any) => ipcRenderer.invoke('import:files', filePaths, options),
     reindexPhoto: (photoId: string) => ipcRenderer.invoke('import:reindex', photoId),
     reindexAllPhotos: () => ipcRenderer.invoke('import:reindexAll'),
+    regenerateThumbnails: () => ipcRenderer.invoke('import:reindexAll'), // alias used by SettingsModal
 
     // Metadata operations
     extractMetadata: (filePath: string) => ipcRenderer.invoke('metadata:extract', filePath),
@@ -93,6 +112,9 @@ contextBridge.exposeInMainWorld('api', {
     lightroomSyncMetadata: (catalogPath: string) => ipcRenderer.invoke('lightroom:syncMetadata', catalogPath),
     lightroomImport: (catalogPath: string, options: any) => ipcRenderer.invoke('lightroom:import', catalogPath, options),
     lightroomImportAll: (catalogPath: string) => ipcRenderer.invoke('lightroom:importAll', catalogPath),
+    // No-arg convenience wrappers used by SettingsModal: auto-pick the best catalog.
+    syncLightroom: () => ipcRenderer.invoke('lightroom:syncAuto'),
+    importLightroom: () => ipcRenderer.invoke('lightroom:importAuto'),
     onLightroomProgress: (callback: (progress: any) => void) => {
         const handler = (_event: any, progress: any) => callback(progress);
         ipcRenderer.on('lightroom:progress', handler);
@@ -196,6 +218,18 @@ contextBridge.exposeInMainWorld('api', {
     getFaceWithPhoto: (faceId: string) => ipcRenderer.invoke('faces:getWithPhoto', faceId),
     getPersonWithThumbnail: (personId: string) => ipcRenderer.invoke('people:getWithThumbnail', personId),
     getPeopleWithThumbnails: () => ipcRenderer.invoke('people:getAllWithThumbnails'),
+    regenerateFaceCrops: () => ipcRenderer.invoke('faces:regenerateCrops'),
+    onFacesCropProgress: (callback: (p: { current: number; total: number; done?: boolean }) => void) => {
+        const handler = (_e: any, p: any) => callback(p);
+        ipcRenderer.on('faces:crop-progress', handler);
+        return () => ipcRenderer.removeListener('faces:crop-progress', handler);
+    },
+    reclusterFaces: () => ipcRenderer.invoke('faces:recluster'),
+    onReclusterProgress: (callback: (p: { phase: string; current?: number; total?: number }) => void) => {
+        const handler = (_e: any, p: any) => callback(p);
+        ipcRenderer.on('faces:recluster-progress', handler);
+        return () => ipcRenderer.removeListener('faces:recluster-progress', handler);
+    },
 
     // Duplicate detection
     findDuplicates: () => ipcRenderer.invoke('duplicates:find'),
@@ -269,6 +303,19 @@ export interface ElectronAPI {
     getCollectionPhotos: (collectionId: string) => Promise<any[]>;
     addPhotosToCollection: (collectionId: string, photoIds: string[]) => Promise<boolean>;
     removePhotosFromCollection: (collectionId: string, photoIds: string[]) => Promise<boolean>;
+
+    // Album / Photo Book operations
+    getAlbums: () => Promise<any[]>;
+    createAlbum: (a: any) => Promise<string>;
+    updateAlbum: (id: string, u: any) => Promise<boolean>;
+    deleteAlbum: (id: string) => Promise<boolean>;
+    getAlbumPages: (id: string) => Promise<any[]>;
+    saveAlbumPages: (id: string, pages: any[]) => Promise<boolean>;
+    getPhotosByIds: (ids: string[]) => Promise<any[]>;
+    autoCurateAlbum: (params: any) => Promise<any>;
+    exportAlbumPdf: (spec: any, savePath: string) => Promise<any>;
+    exportAlbumSlideshow: (spec: any, savePath: string) => Promise<any>;
+    onAlbumProgress: (callback: (p: any) => void) => () => void;
 
     getKeywords: () => Promise<any[]>;
     createKeyword: (keyword: any) => Promise<string>;
@@ -358,6 +405,10 @@ export interface ElectronAPI {
     getFaceWithPhoto: (faceId: string) => Promise<any>;
     getPersonWithThumbnail: (personId: string) => Promise<any>;
     getPeopleWithThumbnails: () => Promise<any[]>;
+    regenerateFaceCrops: () => Promise<{ generated: number }>;
+    onFacesCropProgress: (callback: (p: { current: number; total: number; done?: boolean }) => void) => () => void;
+    reclusterFaces: () => Promise<{ peopleCreated: number; facesAssigned: number; unassigned: number; preservedNames: number }>;
+    onReclusterProgress: (callback: (p: { phase: string; current?: number; total?: number }) => void) => () => void;
 
     // Duplicate detection
     findDuplicates: () => Promise<{ hash: string; photos: any[] }[]>;

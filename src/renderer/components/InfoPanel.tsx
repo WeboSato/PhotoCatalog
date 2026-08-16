@@ -160,7 +160,7 @@ const KeywordsEditor: React.FC<KeywordsEditorProps> = ({ photoId, filePath, keyw
                             onFocus={() => setShowSuggestions(newKeyword.length > 0)}
                             placeholder="Type keyword..."
                             autoFocus
-                            className="flex-1 px-2 py-1 text-xs bg-gray-800 border border-gray-600 rounded text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                            className="flex-1 px-2 py-1 text-xs bg-gray-800 border border-gray-600 rounded text-white placeholder-gray-500 focus:outline-none focus:border-white/40"
                         />
                         <button
                             onClick={handleAddKeyword}
@@ -323,7 +323,7 @@ const Histogram: React.FC<HistogramProps> = ({ imageSrc }) => {
 
         drawChannel(histogramData.r, '#ef4444', 0.5);
         drawChannel(histogramData.g, '#22c55e', 0.5);
-        drawChannel(histogramData.b, '#3b82f6', 0.5);
+        drawChannel(histogramData.b, '#9a9aa2', 0.5);
         ctx.globalAlpha = 0.3;
         drawChannel(histogramData.l, '#ffffff', 0.3);
         ctx.globalAlpha = 1;
@@ -376,7 +376,7 @@ const Slider: React.FC<SliderProps> = ({ label, value, min, max, onChange }) => 
                 onChange={(e) => onChange(Number(e.target.value))}
                 className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb"
                 style={{
-                    background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${percentage}%, #374151 ${percentage}%, #374151 100%)`
+                    background: `linear-gradient(to right, #9a9aa2 0%, #9a9aa2 ${percentage}%, #374151 ${percentage}%, #374151 100%)`
                 }}
             />
         </div>
@@ -432,7 +432,7 @@ export const InfoPanel: React.FC = React.memo(() => {
 
     if (!activePhoto) {
         return (
-            <div className="w-72 bg-gray-900 border-l border-gray-700 flex items-center justify-center">
+            <div className="w-72 bg-gray-900/55 backdrop-blur-2xl border-l border-white/10 flex items-center justify-center">
                 <div className="text-center text-gray-500 p-4">
                     <Info size={32} className="mx-auto mb-2 opacity-50" />
                     <p className="text-sm">Select a photo to view details</p>
@@ -496,7 +496,7 @@ export const InfoPanel: React.FC = React.memo(() => {
     const imageSrc = activePhoto ? getPreviewUrl(activePhoto) : '';
 
     return (
-        <div className="w-72 bg-gray-900 border-l border-gray-700 flex flex-col overflow-hidden">
+        <div className="w-72 bg-gray-900/55 backdrop-blur-2xl border-l border-white/10 flex flex-col overflow-hidden">
             {/* Preview - hide in loupe mode since image is already shown */}
             {!isLoupeMode && (
                 <div className="h-48 bg-black flex items-center justify-center">

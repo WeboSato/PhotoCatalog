@@ -4,6 +4,10 @@
 interface ElectronAPI {
     // Dialog operations
     openDirectory: () => Promise<string | null>;
+    openDirectoryDialog: () => Promise<string | null>;
+    regenerateThumbnails: () => Promise<any>;
+    syncLightroom: () => Promise<any>;
+    importLightroom: () => Promise<any>;
     openFiles: (filters?: any[]) => Promise<string[]>;
     saveFile: (options: any) => Promise<string | null>;
 
@@ -31,6 +35,19 @@ interface ElectronAPI {
     getCollectionPhotos: (collectionId: string) => Promise<any[]>;
     addPhotosToCollection: (collectionId: string, photoIds: string[]) => Promise<boolean>;
     removePhotosFromCollection: (collectionId: string, photoIds: string[]) => Promise<boolean>;
+
+    // Album / Photo Book operations
+    getAlbums: () => Promise<import('../shared/albumTypes').Album[]>;
+    createAlbum: (a: Partial<import('../shared/albumTypes').Album>) => Promise<string>;
+    updateAlbum: (id: string, u: Partial<import('../shared/albumTypes').Album>) => Promise<boolean>;
+    deleteAlbum: (id: string) => Promise<boolean>;
+    getAlbumPages: (id: string) => Promise<import('../shared/albumTypes').AlbumPage[]>;
+    saveAlbumPages: (id: string, pages: import('../shared/albumTypes').AlbumPage[]) => Promise<boolean>;
+    getPhotosByIds: (ids: string[]) => Promise<any[]>;
+    autoCurateAlbum: (params: { seedIds?: string[]; personId?: string; density?: string; minCount?: number }) => Promise<any>;
+    exportAlbumPdf: (spec: import('../shared/albumTypes').AlbumRenderSpec, savePath: string) => Promise<import('../shared/albumTypes').AlbumExportResult>;
+    exportAlbumSlideshow: (spec: import('../shared/albumTypes').AlbumRenderSpec, savePath: string) => Promise<import('../shared/albumTypes').AlbumExportResult>;
+    onAlbumProgress: (callback: (p: import('../shared/albumTypes').AlbumProgress) => void) => () => void;
 
     // Keyword operations
     getKeywords: () => Promise<any[]>;
@@ -130,6 +147,10 @@ interface ElectronAPI {
     getFaceWithPhoto: (faceId: string) => Promise<any>;
     getPersonWithThumbnail: (personId: string) => Promise<any>;
     getPeopleWithThumbnails: () => Promise<any[]>;
+    regenerateFaceCrops: () => Promise<{ generated: number }>;
+    onFacesCropProgress: (callback: (p: { current: number; total: number; done?: boolean }) => void) => () => void;
+    reclusterFaces: () => Promise<{ peopleCreated: number; facesAssigned: number; unassigned: number; preservedNames: number }>;
+    onReclusterProgress: (callback: (p: { phase: string; current?: number; total?: number }) => void) => () => void;
 
     // Duplicate detection
     findDuplicates: () => Promise<{ hash: string; photos: any[] }[]>;

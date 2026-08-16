@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useCatalogStore } from '../stores/catalogStore';
 import { PersonCard, PersonWithThumbnail } from './PersonCard';
+import { getImageUrl as toLocalUrl } from '../utils/imageUrl';
 import {
     ScanFace,
     Loader2,
@@ -58,6 +59,9 @@ export const AIFaceView: React.FC = () => {
     useEffect(() => {
         loadPeople();
     }, [loadPeople]);
+
+    // When the background face-crop backfill finishes, refresh so tight crops appear.
+    useEffect(() => window.api.onFacesCropProgress(p => { if (p.done) loadPeople(); }), [loadPeople]);
 
     // Sort people based on current sort options
     const sortedPeople = React.useMemo(() => {
@@ -150,6 +154,9 @@ export const AIFaceView: React.FC = () => {
             const clusterResult = await window.api.clusterFaces();
             console.log(`[FaceScan] Clustering done: ${clusterResult.clustersCreated} people, ${clusterResult.facesAssigned} faces`);
 
+            // Generate tight square crops for the new representatives before showing them.
+            await window.api.regenerateFaceCrops();
+
             // Refresh people list
             await loadPeople();
 
@@ -157,6 +164,27 @@ export const AIFaceView: React.FC = () => {
             console.error('[FaceScan] Error:', error);
             alert('Error during scan: ' + (error as Error).message);
         } finally {
+            setIsScanning(false);
+            setScanProgress({ current: 0, total: 0, phase: '' });
+        }
+    };
+
+    // Re-group all detected faces with the improved clustering (keeps renamed people).
+    const handleRecluster = async () => {
+        if (isScanning) return;
+        setIsScanning(true);
+        setScanProgress({ current: 0, total: 0, phase: 'clustering' });
+        const unsub = window.api.onReclusterProgress((p) => {
+            setScanProgress({ current: p.current || 0, total: p.total || 0, phase: p.phase === 'crops' ? 'clustering' : p.phase });
+        });
+        try {
+            const res = await window.api.reclusterFaces();
+            console.log('[Recluster]', res);
+            await loadPeople();
+        } catch (e) {
+            console.error('[Recluster] failed:', e);
+        } finally {
+            unsub();
             setIsScanning(false);
             setScanProgress({ current: 0, total: 0, phase: '' });
         }
@@ -275,7 +303,7 @@ export const AIFaceView: React.FC = () => {
                         </button>
                         <div>
                             <h1
-                                className="text-2xl font-bold text-white cursor-pointer hover:text-blue-400"
+                                className="text-2xl font-bold text-white cursor-pointer hover:text-white"
                                 onDoubleClick={() => handleRenamePerson(selectedPerson)}
                                 title="Double-click to rename"
                             >
@@ -307,9 +335,10 @@ export const AIFaceView: React.FC = () => {
                                     className="group relative aspect-square rounded-lg overflow-hidden bg-gray-800"
                                 >
                                     <img
-                                        src={`local-image://${photo.thumbnail_path || photo.file_path}`}
+                                        src={toLocalUrl(photo.thumbnail_path || photo.file_path)}
                                         alt={photo.file_name}
                                         onClick={() => handlePhotoClick(photo)}
+                                        onError={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = 'hidden'; }}
                                         className="w-full h-full object-cover cursor-pointer transition-transform group-hover:scale-105"
                                         loading="lazy"
                                     />
@@ -353,7 +382,7 @@ export const AIFaceView: React.FC = () => {
                 <div className="flex items-center gap-3">
                     <h1 className="text-2xl font-bold text-white">AIFACE</h1>
                     {isScanning && (
-                        <div className="flex items-center gap-2 text-blue-400 text-sm">
+                        <div className="flex items-center gap-2 text-gray-200 text-sm">
                             <Loader2 className="animate-spin" size={16} />
                             {scanProgress.phase === 'clustering' ? (
                                 <span>Grouping similar faces...</span>
@@ -369,8 +398,8 @@ export const AIFaceView: React.FC = () => {
                     <button
                         onClick={scanFaces}
                         disabled={isScanning}
-                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700
-                                   disabled:bg-blue-600/50 text-white rounded-lg transition-colors"
+                        className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20
+                                   disabled:bg-white/10 text-white rounded-lg transition-colors"
                     >
                         {isScanning ? (
                             <Loader2 className="animate-spin" size={18} />
@@ -379,6 +408,20 @@ export const AIFaceView: React.FC = () => {
                         )}
                         <span>Scan Faces</span>
                     </button>
+
+                    {/* Re-group button — re-runs the improved clustering, keeps renamed people */}
+                    {people.length > 0 && (
+                        <button
+                            onClick={handleRecluster}
+                            disabled={isScanning}
+                            title="Re-grouper les visages (améliore le regroupement, garde les noms)"
+                            className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600
+                                       disabled:opacity-50 text-white rounded-lg transition-colors"
+                        >
+                            <Users size={18} />
+                            <span>Re-grouper</span>
+                        </button>
+                    )}
 
                     {/* Clear all button */}
                     {people.length > 0 && (
@@ -416,21 +459,21 @@ export const AIFaceView: React.FC = () => {
                                     <button
                                         onClick={() => { setSortBy('name'); setShowSortMenu(false); }}
                                         className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-700
-                                                    ${sortBy === 'name' ? 'text-blue-400' : 'text-gray-300'}`}
+                                                    ${sortBy === 'name' ? 'text-gray-200' : 'text-gray-300'}`}
                                     >
                                         By Name
                                     </button>
                                     <button
                                         onClick={() => { setSortBy('photo_count'); setShowSortMenu(false); }}
                                         className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-700
-                                                    ${sortBy === 'photo_count' ? 'text-blue-400' : 'text-gray-300'}`}
+                                                    ${sortBy === 'photo_count' ? 'text-gray-200' : 'text-gray-300'}`}
                                     >
                                         By Photo Count
                                     </button>
                                     <button
                                         onClick={() => { setSortBy('recent'); setShowSortMenu(false); }}
                                         className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-700
-                                                    ${sortBy === 'recent' ? 'text-blue-400' : 'text-gray-300'}`}
+                                                    ${sortBy === 'recent' ? 'text-gray-200' : 'text-gray-300'}`}
                                     >
                                         By Recent
                                     </button>

@@ -12,8 +12,8 @@
     --color-text-secondary: #a0a0a0;
     --color-text-muted: #666666;
     --color-border: #363636;
-    --color-accent: #3b82f6;
-    --color-accent-hover: #2563eb;
+    --color-accent: #d4d4d8;
+    --color-accent-hover: #f4f4f5;
     --color-success: #22c55e;
     --color-warning: #eab308;
     --color-error: #ef4444;
@@ -33,10 +33,32 @@ html, body, #root {
 
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-    background-color: var(--color-bg-primary);
+    /* Subtle dark gradient so glass surfaces read with depth */
+    background-color: #0b0b0e;
+    background-image:
+        radial-gradient(1200px 800px at 15% -10%, rgba(120, 120, 140, 0.10), transparent 60%),
+        radial-gradient(1000px 700px at 100% 110%, rgba(90, 90, 110, 0.10), transparent 55%),
+        linear-gradient(180deg, #0d0d11 0%, #08080a 100%);
     color: var(--color-text-primary);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+}
+
+/* Glassmorphism helpers — translucent frosted panels over the dark backdrop */
+.glass {
+    background: rgba(24, 24, 28, 0.55);
+    backdrop-filter: blur(18px) saturate(140%);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.glass-strong {
+    background: rgba(18, 18, 22, 0.75);
+    backdrop-filter: blur(24px) saturate(150%);
+    -webkit-backdrop-filter: blur(24px) saturate(150%);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+}
+.glass-hover:hover {
+    background: rgba(255, 255, 255, 0.06);
 }
 
 /* Discrete macOS-style scrollbar */
@@ -185,7 +207,7 @@ body {
 }
 
 .btn-primary {
-    @apply bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500;
+    @apply bg-white/10 text-white hover:bg-white/20 focus:ring-white/30 backdrop-blur;
 }
 
 .btn-secondary {
@@ -203,7 +225,7 @@ body {
 /* Input styles */
 .input {
     @apply w-full px-3 py-2 rounded-md border border-gray-600 bg-gray-800 text-white;
-    @apply placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent;
+    @apply placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-white/30 focus:border-transparent;
 }
 
 /* Panel styles */
@@ -266,7 +288,7 @@ body {
 }
 
 .progress-bar-fill {
-    @apply h-full bg-blue-500 transition-all duration-300;
+    @apply h-full bg-gray-300 transition-all duration-300;
 }
 
 /* Empty state */
@@ -345,7 +367,7 @@ body {
 }
 
 .filmstrip-item.active {
-    @apply border-blue-500;
+    @apply border-white/40;
 }
 
 /* Optimized photo cell - GPU accelerated */

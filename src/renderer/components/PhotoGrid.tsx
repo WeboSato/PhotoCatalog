@@ -8,6 +8,10 @@ import { DeleteDialog } from './DeleteDialog';
 
 const getStore = () => useCatalogStore.getState();
 
+// Session-wide set of thumbnail URLs that have finished loading at least once, so
+// re-rendered cells skip the loading spinner and show the cached image instantly.
+const loadedThumbUrls = new Set<string>();
+
 // Compute CSS filter from development settings
 const computeCssFilter = (devSettings: DevelopmentSettings | null): string => {
     if (!devSettings) return 'none';
@@ -116,9 +120,14 @@ const PhotoCell = React.memo<{
     onColorChange?: (color: string) => void;
     onReject?: () => void;
 }>(({ photo, isSelected, size, inSurveyMode, onClick, onDblClick, onContextMenu, onRatingChange, onColorChange, onReject }) => {
-    const [loadState, setLoadState] = useState<'loading' | 'loaded' | 'error'>('loading');
-
     const thumbUrl = useMemo(() => getThumbnailUrl(photo), [photo.thumbnail_path]);
+
+    // Any thumbnail that has loaded once stays "loaded" for the whole session, so a
+    // grid reload (e.g. after a background refresh) never flashes a spinner over an
+    // already-decoded image — the browser serves it from the local-image cache.
+    const [loadState, setLoadState] = useState<'loading' | 'loaded' | 'error'>(
+        () => loadedThumbUrls.has(thumbUrl) ? 'loaded' : 'loading'
+    );
 
     // Compute CSS filter for this photo's develop settings
     const cssFilter = useMemo(() => {
@@ -142,18 +151,21 @@ const PhotoCell = React.memo<{
         }
     }, [photo.blur_hash]);
 
-    // Reset state when URL changes
+    // Reset state when URL changes — but keep "loaded" if this URL loaded before.
     useEffect(() => {
         if (!thumbUrl || thumbUrl === PLACEHOLDER_IMAGE) {
             setLoadState('error');
+        } else if (loadedThumbUrls.has(thumbUrl)) {
+            setLoadState('loaded');
         } else {
             setLoadState('loading');
         }
     }, [thumbUrl]);
 
     const handleLoad = useCallback(() => {
+        loadedThumbUrls.add(thumbUrl);
         setLoadState('loaded');
-    }, []);
+    }, [thumbUrl]);
 
     const handleError = useCallback(() => {
         setLoadState('error');
@@ -170,7 +182,7 @@ const PhotoCell = React.memo<{
             style={{
                 width: '100%',
                 height: '100%',
-                borderColor: isSelected ? '#3b82f6' : 'transparent',
+                borderColor: isSelected ? '#9a9aa2' : 'transparent',
                 background: '#1a1a1a',
                 position: 'relative'
             }}
@@ -182,6 +194,7 @@ const PhotoCell = React.memo<{
             <img
                 src={thumbUrl}
                 alt=""
+                decoding="async"
                 onLoad={handleLoad}
                 onError={handleError}
                 style={{
@@ -461,7 +474,7 @@ const ContextMenu: React.FC<{
                     {editors.map((editor) => (
                         <button
                             key={editor.id}
-                            className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-blue-600 hover:text-white"
+                            className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-white/15 hover:text-white"
                             onClick={() => onEditIn(editor.id)}
                         >
                             {editor.name}
@@ -473,19 +486,19 @@ const ContextMenu: React.FC<{
             )}
             <div className="border-t border-[#444] mt-1 pt-1">
                 <button
-                    className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-blue-600 hover:text-white"
+                    className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-white/15 hover:text-white"
                     onClick={onLinkEditedFile}
                 >
                     📎 Link edited file...
                 </button>
                 <button
-                    className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-blue-600 hover:text-white"
+                    className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-white/15 hover:text-white"
                     onClick={onGoToFolder}
                 >
                     📁 Go to folder
                 </button>
                 <button
-                    className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-blue-600 hover:text-white"
+                    className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-white/15 hover:text-white"
                     onClick={onShowInFinder}
                 >
                     📂 Show in Finder
@@ -545,6 +558,10 @@ export const PhotoGrid: React.FC = React.memo(() => {
         overscan: 8,
     });
 
+    const virtualItems = rowVirtualizer.getVirtualItems();
+    const firstVisibleRow = virtualItems.length ? virtualItems[0].index : 0;
+    const lastVisibleRow = virtualItems.length ? virtualItems[virtualItems.length - 1].index : 0;
+
     // Load photos - only when NOT browsing a folder (folders load via FolderTree)
     const loadPhotos = useCallback(async () => {
         // Skip if a folder is selected - FolderTree handles that
@@ -553,13 +570,17 @@ export const PhotoGrid: React.FC = React.memo(() => {
         loadingRef.current = true;
 
         try {
+            // Load the whole library (no 1000-row cap). react-virtual only renders
+            // the visible rows, so a 20k+ photo array is fine; the cap was silently
+            // truncating large catalogs. LOAD_ALL is a sentinel "all rows" limit.
+            const LOAD_ALL = 1_000_000;
             let data: Photo[];
             if (activeCollectionId) {
                 data = await window.api.getCollectionPhotos(activeCollectionId);
             } else if (Object.keys(filters).length > 0) {
-                data = await window.api.searchPhotos(filters, 1000, 0);
+                data = await window.api.searchPhotos(filters, LOAD_ALL, 0);
             } else {
-                data = await window.api.getPhotos(1000, 0);
+                data = await window.api.getPhotos(LOAD_ALL, 0);
             }
             setPhotos(data);
         } catch (e) {
@@ -575,16 +596,71 @@ export const PhotoGrid: React.FC = React.memo(() => {
         }
     }, [loadPhotos, activeFolderId]);
 
-    // Listen for photos:refresh to update thumbnails during processing
+    // Listen for photos:refresh to update thumbnails during processing.
+    // During import/AI tagging the main process fires this every ~50 thumbnails,
+    // and each call re-fetches up to 1000 rows + replaces the whole array. Throttle
+    // so a burst collapses to at most one reload per REFRESH_INTERVAL, with a
+    // trailing reload so the final state isn't missed.
+    const lastRefreshRef = useRef(0);
+    const refreshTimerRef = useRef<number | null>(null);
     useEffect(() => {
+        const REFRESH_INTERVAL = 2500;
+        const run = () => { if (!activeFolderId) loadPhotos(); };
         const unsubscribe = window.api.onPhotosRefresh(() => {
-            // Only refresh if not browsing a folder
-            if (!activeFolderId) {
-                loadPhotos();
+            const now = Date.now();
+            const elapsed = now - lastRefreshRef.current;
+            if (elapsed >= REFRESH_INTERVAL) {
+                lastRefreshRef.current = now;
+                run();
+            } else if (refreshTimerRef.current === null) {
+                refreshTimerRef.current = window.setTimeout(() => {
+                    refreshTimerRef.current = null;
+                    lastRefreshRef.current = Date.now();
+                    run();
+                }, REFRESH_INTERVAL - elapsed);
             }
         });
-        return unsubscribe;
+        return () => {
+            unsubscribe();
+            if (refreshTimerRef.current !== null) {
+                clearTimeout(refreshTimerRef.current);
+                refreshTimerRef.current = null;
+            }
+        };
     }, [loadPhotos, activeFolderId]);
+
+    // Directional thumbnail prefetch: warm the local-image cache for rows just
+    // beyond the visible+overscan window in the scroll direction, so fast scroll
+    // shows decoded images instead of spinners. Reuses the same local-image:// URL
+    // (now served async/streamed by the main process) — no extra DB work.
+    const prefetchedRef = useRef<Set<string>>(new Set());
+    const lastScrollTopRef = useRef(0);
+    // Forget what we prefetched when the dataset itself changes.
+    useEffect(() => { prefetchedRef.current.clear(); }, [photos]);
+    useEffect(() => {
+        const PREFETCH_ROWS = 6;
+        const scrollEl = parentRef.current;
+        const goingDown = scrollEl ? scrollEl.scrollTop >= lastScrollTopRef.current : true;
+        if (scrollEl) lastScrollTopRef.current = scrollEl.scrollTop;
+
+        const startRow = goingDown ? lastVisibleRow + 1 : Math.max(0, firstVisibleRow - PREFETCH_ROWS);
+        const endRow = goingDown ? lastVisibleRow + PREFETCH_ROWS : firstVisibleRow - 1;
+
+        for (let r = startRow; r <= endRow; r++) {
+            for (let c = 0; c < columnCount; c++) {
+                const idx = r * columnCount + c;
+                if (idx < 0 || idx >= photos.length) continue;
+                const p = photos[idx];
+                if (!p.thumbnail_path || prefetchedRef.current.has(p.id)) continue;
+                prefetchedRef.current.add(p.id);
+                const img = new Image();
+                img.decoding = 'async';
+                // Prefetch must never starve the visible cells on a slow disk.
+                (img as any).fetchPriority = 'low';
+                img.src = getThumbnailUrl(p);
+            }
+        }
+    }, [firstVisibleRow, lastVisibleRow, columnCount, photos]);
 
     // Selection changes are now read directly from the store (no duplicated subscribe)
 
@@ -859,7 +935,7 @@ export const PhotoGrid: React.FC = React.memo(() => {
                 <div className="flex items-center gap-1">
                     {selectedIds.size > 0 && (
                         <>
-                            <span className="text-xs text-blue-400 mr-1">
+                            <span className="text-xs text-gray-200 mr-1">
                                 {selectedIds.size} selected
                             </span>
                             <button
@@ -937,7 +1013,7 @@ export const PhotoGrid: React.FC = React.memo(() => {
                         position: 'relative',
                     }}
                 >
-                    {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                    {virtualItems.map((virtualRow) => {
                         const startIndex = virtualRow.index * columnCount;
 
                         return (
@@ -1004,24 +1080,24 @@ export const PhotoGrid: React.FC = React.memo(() => {
 
             {/* Save Path Notification */}
             {savePathNotification.show && (
-                <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 bg-blue-600 text-white px-6 py-4 rounded-lg shadow-2xl max-w-2xl">
+                <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 bg-white/10 text-white px-6 py-4 rounded-lg shadow-2xl max-w-2xl">
                     <div className="flex items-start gap-3">
                         <div className="text-2xl">📁</div>
                         <div className="flex-1">
                             <p className="font-medium mb-1">Save in Affinity</p>
-                            <p className="text-sm text-blue-100 mb-2">
+                            <p className="text-sm text-gray-300 mb-2">
                                 When saving in Affinity, use this folder:
                             </p>
-                            <code className="block bg-blue-800 px-3 py-2 rounded text-xs break-all">
+                            <code className="block bg-white/10 px-3 py-2 rounded text-xs break-all">
                                 {savePathNotification.path}
                             </code>
-                            <p className="text-xs text-blue-200 mt-2">
+                            <p className="text-xs text-gray-400 mt-2">
                                 ✓ Path copied to clipboard (Cmd+V to paste)
                             </p>
                         </div>
                         <button
                             onClick={() => setSavePathNotification({ show: false, path: '' })}
-                            className="text-blue-200 hover:text-white"
+                            className="text-gray-400 hover:text-white"
                         >
                             ✕
                         </button>

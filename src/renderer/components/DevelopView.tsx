@@ -90,7 +90,7 @@ const Histogram: React.FC<{ imageSrc: string | null }> = ({ imageSrc }) => {
         ctx.globalAlpha = 0.3;
         drawChannel(histogramData.r, '#ef4444');
         drawChannel(histogramData.g, '#22c55e');
-        drawChannel(histogramData.b, '#3b82f6');
+        drawChannel(histogramData.b, '#9a9aa2');
 
         ctx.globalAlpha = 1;
     }, [histogramData]);
@@ -223,7 +223,7 @@ const DevelopSlider: React.FC<{
                 onDoubleClick={() => onChange(min === 0 ? 0 : 0)} // Double-click pour reset a 0
                 className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
                 style={{
-                    background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${percentage}%, #374151 ${percentage}%, #374151 100%)`
+                    background: `linear-gradient(to right, #9a9aa2 0%, #9a9aa2 ${percentage}%, #374151 ${percentage}%, #374151 100%)`
                 }}
             />
             <div className="flex justify-between text-[10px] text-gray-600 mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -299,7 +299,7 @@ const PresetsPanel: React.FC<{
                                     onClick={() => onApply(preset)}
                                     className={`px-2.5 py-1 text-xs rounded-md transition-all ${
                                         activePresetId === preset.id
-                                            ? 'bg-blue-600 text-white'
+                                            ? 'bg-white/10 text-white'
                                             : 'bg-gray-700 text-gray-300 hover:bg-gray-600 hover:text-white'
                                     }`}
                                 >
@@ -541,7 +541,7 @@ export const DevelopView: React.FC = () => {
                     <p className="text-gray-400 max-w-md mb-4">
                         Selectionnez une photo pour commencer l'edition. Tous les ajustements sont non-destructifs.
                     </p>
-                    <button onClick={() => setViewMode('grid')} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                    <button onClick={() => setViewMode('grid')} className="px-4 py-2 bg-white/10 text-white rounded hover:bg-white/20">
                         Aller a la Bibliotheque
                     </button>
                 </div>
@@ -562,7 +562,7 @@ export const DevelopView: React.FC = () => {
                         <button
                             key={photo.id}
                             onClick={() => setActivePhotoId(photo.id)}
-                            className={`w-12 h-12 rounded overflow-hidden transition-all ${photo.id === activePhotoId ? 'ring-2 ring-blue-500 scale-105' : 'opacity-60 hover:opacity-100'}`}
+                            className={`w-12 h-12 rounded overflow-hidden transition-all ${photo.id === activePhotoId ? 'ring-2 ring-white/40 scale-105' : 'opacity-60 hover:opacity-100'}`}
                         >
                             <img src={getImageUrl(photo.file_path)} alt="" className="w-full h-full object-cover" />
                         </button>
@@ -577,7 +577,7 @@ export const DevelopView: React.FC = () => {
                         <span className="text-sm text-white font-medium">{activePhoto.file_name}</span>
                         <span className="text-xs text-gray-500">{currentIndex + 1} / {photos.length}</span>
                         {activePresetId && (
-                            <span className="text-xs bg-blue-600/30 text-blue-300 px-2 py-0.5 rounded">
+                            <span className="text-xs bg-white/10 text-gray-300 px-2 py-0.5 rounded">
                                 {presets.find(p => p.id === activePresetId)?.name}
                             </span>
                         )}
@@ -596,7 +596,7 @@ export const DevelopView: React.FC = () => {
                         <div className="w-px h-4 bg-gray-600 mx-1" />
                         <button onClick={() => setShowBefore(!showBefore)}
                             title="Avant/Apres (\\)"
-                            className={`p-2 rounded ${showBefore ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}>
+                            className={`p-2 rounded ${showBefore ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}>
                             {showBefore ? <Eye size={16} /> : <EyeOff size={16} />}
                         </button>
                         <div className="w-px h-4 bg-gray-600 mx-1" />
