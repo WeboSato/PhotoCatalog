@@ -89,6 +89,17 @@ const useScrollCompression = (callback: (delta: number) => void, delay: number =
     }, [callback, delay]);
 };
 
+// Client-side equivalent of the rating/flag/colour SQL filters, for collections
+// (searchPhotos has no collection scope, so its rows are filtered here instead).
+const applyPhotoFilters = (photos: Photo[], filters: any): Photo[] => {
+    return photos.filter(p => {
+        if (filters.rating?.min !== undefined && (p.rating || 0) < filters.rating.min) return false;
+        if (filters.flag?.length && !filters.flag.includes(p.flag || 'none')) return false;
+        if (filters.color_label?.length && !filters.color_label.includes(p.color_label || 'none')) return false;
+        return true;
+    });
+};
+
 // Context menu state
 interface ContextMenuState {
     visible: boolean;
@@ -562,10 +573,12 @@ export const PhotoGrid: React.FC = React.memo(() => {
     const firstVisibleRow = virtualItems.length ? virtualItems[0].index : 0;
     const lastVisibleRow = virtualItems.length ? virtualItems[virtualItems.length - 1].index : 0;
 
-    // Load photos - only when NOT browsing a folder (folders load via FolderTree)
+    // Load photos - folders load via FolderTree unless a filter has to be applied
     const loadPhotos = useCallback(async () => {
-        // Skip if a folder is selected - FolderTree handles that
-        if (activeFolderId) return;
+        const hasFilters = Object.keys(filters).length > 0;
+        // Without filters a folder's contents are FolderTree's job; with filters we
+        // load them here so rating/flag/colour filtering works inside a folder too.
+        if (activeFolderId && !hasFilters) return;
         if (loadingRef.current) return;
         loadingRef.current = true;
 
@@ -575,9 +588,13 @@ export const PhotoGrid: React.FC = React.memo(() => {
             // truncating large catalogs. LOAD_ALL is a sentinel "all rows" limit.
             const LOAD_ALL = 1_000_000;
             let data: Photo[];
-            if (activeCollectionId) {
+            if (activeFolderId) {
+                data = await window.api.searchPhotos({ ...filters, folder_path: activeFolderId }, LOAD_ALL, 0);
+            } else if (activeCollectionId) {
                 data = await window.api.getCollectionPhotos(activeCollectionId);
-            } else if (Object.keys(filters).length > 0) {
+                // searchPhotos can't scope to a collection, so filter its result here.
+                if (hasFilters) data = applyPhotoFilters(data, filters);
+            } else if (hasFilters) {
                 data = await window.api.searchPhotos(filters, LOAD_ALL, 0);
             } else {
                 data = await window.api.getPhotos(LOAD_ALL, 0);
@@ -927,6 +944,41 @@ export const PhotoGrid: React.FC = React.memo(() => {
         }
     }, [updatePhoto]);
 
+    // --- Library filters (rating / flag / colour) -------------------------------
+    // These narrow what the grid shows; they never modify photos. Each control is a
+    // toggle, so clicking an active one turns that filter back off.
+    const setFilters = useCatalogStore((s) => s.setFilters);
+
+    const ratingFilter = (filters as any).rating?.min as number | undefined;
+    const flagFilter = ((filters as any).flag || []) as string[];
+    const colorFilter = ((filters as any).color_label || []) as string[];
+    const hasGridFilters = ratingFilter !== undefined || flagFilter.length > 0 || colorFilter.length > 0;
+
+    const toggleRatingFilter = useCallback((rating: number) => {
+        const next: any = { ...filters };
+        if (next.rating?.min === rating) delete next.rating;
+        else next.rating = { min: rating };
+        setFilters(next);
+    }, [filters, setFilters]);
+
+    const toggleListFilter = useCallback((key: 'flag' | 'color_label', value: string) => {
+        const next: any = { ...filters };
+        const current: string[] = next[key] || [];
+        const updated = current.includes(value) ? current.filter(v => v !== value) : [...current, value];
+        if (updated.length === 0) delete next[key];
+        else next[key] = updated;
+        setFilters(next);
+    }, [filters, setFilters]);
+
+    // Clears only what this bar controls, leaving search text/keywords alone.
+    const clearGridFilters = useCallback(() => {
+        const next: any = { ...filters };
+        delete next.rating;
+        delete next.flag;
+        delete next.color_label;
+        setFilters(next);
+    }, [filters, setFilters]);
+
     // Zoom handlers
     const handleZoomOut = useCallback(() => {
         getStore().setGridSize(Math.max(80, gridSize - 50));
@@ -1016,10 +1068,81 @@ export const PhotoGrid: React.FC = React.memo(() => {
                     </button>
                 </div>
 
-                {/* Right side - Count */}
-                <span className="text-xs text-gray-500">
-                    {photos.length} / {totalPhotoCount}
-                </span>
+                {/* Right side - Library filters + count */}
+                <div className="flex items-center gap-2">
+                    {/* Rating: show photos rated N stars and up */}
+                    <div className="flex items-center" title="Filtrer par note">
+                        {[1, 2, 3, 4, 5].map((rating) => {
+                            const active = ratingFilter !== undefined && rating <= ratingFilter;
+                            return (
+                                <button
+                                    key={rating}
+                                    onClick={() => toggleRatingFilter(rating)}
+                                    className="p-0.5 hover:bg-white/10 rounded"
+                                    title={`${rating}★ et plus`}
+                                >
+                                    <Star
+                                        size={14}
+                                        className={active ? 'text-yellow-400' : 'text-gray-600 hover:text-gray-400'}
+                                        fill={active ? '#facc15' : 'none'}
+                                    />
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    <div className="h-4 w-px bg-[#333]" />
+
+                    {/* Flags */}
+                    <div className="flex items-center gap-0.5">
+                        <button
+                            onClick={() => toggleListFilter('flag', 'picked')}
+                            className={`p-1 rounded ${flagFilter.includes('picked') ? 'bg-white/15 text-white' : 'text-gray-600 hover:text-gray-300 hover:bg-white/10'}`}
+                            title="Retenues"
+                        >
+                            <Check size={13} />
+                        </button>
+                        <button
+                            onClick={() => toggleListFilter('flag', 'rejected')}
+                            className={`p-1 rounded ${flagFilter.includes('rejected') ? 'bg-white/15 text-red-400' : 'text-gray-600 hover:text-gray-300 hover:bg-white/10'}`}
+                            title="Rejetées"
+                        >
+                            <X size={13} />
+                        </button>
+                    </div>
+
+                    <div className="h-4 w-px bg-[#333]" />
+
+                    {/* Colour labels */}
+                    <div className="flex items-center gap-1">
+                        {colorLabels.map((label) => {
+                            const active = colorFilter.includes(label.value);
+                            return (
+                                <button
+                                    key={label.value}
+                                    onClick={() => toggleListFilter('color_label', label.value)}
+                                    className={`w-3 h-3 rounded-full border ${active ? 'border-white ring-1 ring-white/60' : 'border-transparent opacity-50 hover:opacity-100'}`}
+                                    style={{ backgroundColor: label.color }}
+                                    title={label.value === 'none' ? 'Sans libellé' : label.value}
+                                />
+                            );
+                        })}
+                    </div>
+
+                    {hasGridFilters && (
+                        <button
+                            onClick={clearGridFilters}
+                            className="ml-1 px-2 py-0.5 text-[11px] rounded bg-white/10 text-gray-300 hover:bg-white/20 hover:text-white"
+                            title="Effacer les filtres"
+                        >
+                            Tout afficher
+                        </button>
+                    )}
+
+                    <span className={`text-xs ml-1 ${hasGridFilters ? 'text-gray-300' : 'text-gray-500'}`}>
+                        {photos.length} / {totalPhotoCount}
+                    </span>
+                </div>
             </div>
 
             {/* Virtualized Grid */}
