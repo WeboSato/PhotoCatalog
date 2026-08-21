@@ -79,6 +79,8 @@ contextBridge.exposeInMainWorld('api', {
     // Import operations
     importFromPath: (options: any) => ipcRenderer.invoke('import:fromPath', options),
     importFiles: (filePaths: string[], options: any) => ipcRenderer.invoke('import:files', filePaths, options),
+    scanCard: (dirPath: string) => ipcRenderer.invoke('import:scanCard', dirPath),
+    cardPreview: (filePath: string) => ipcRenderer.invoke('import:cardPreview', filePath),
     reindexPhoto: (photoId: string) => ipcRenderer.invoke('import:reindex', photoId),
     reindexAllPhotos: () => ipcRenderer.invoke('import:reindexAll'),
     regenerateThumbnails: () => ipcRenderer.invoke('import:reindexAll'), // alias used by SettingsModal
@@ -341,6 +343,8 @@ export interface ElectronAPI {
 
     importFromPath: (options: any) => Promise<any>;
     importFiles: (filePaths: string[], options: any) => Promise<any>;
+    scanCard: (dirPath: string) => Promise<any[]>;
+    cardPreview: (filePath: string) => Promise<string | null>;
     reindexPhoto: (photoId: string) => Promise<boolean>;
     reindexAllPhotos: () => Promise<{ success: number; failed: number }>;
 

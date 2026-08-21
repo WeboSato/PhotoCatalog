@@ -907,6 +907,24 @@ app.whenReady().then(async () => {
     // Watch for SD card / external drive insertions
     setupVolumeWatcher();
 
+    // A card inserted BEFORE launch never fired the watcher, so no import dialog
+    // ever appeared for it. Check the volumes that are already mounted too.
+    setTimeout(() => {
+        for (const vol of getCurrentVolumes()) {
+            try {
+                const cameraCheck = isCameraCard(vol);
+                if (cameraCheck.isCamera && (cameraCheck.photoCount || 0) > 0) {
+                    mainWindow?.webContents.send('volume:camera-detected', {
+                        volumePath: vol,
+                        volumeName: path.basename(vol),
+                        dcimPath: cameraCheck.dcimPath,
+                        photoCount: cameraCheck.photoCount
+                    });
+                }
+            } catch { /* unreadable volume */ }
+        }
+    }, 6000);
+
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) {
             createWindow();
@@ -1437,15 +1455,49 @@ ipcMain.handle('folders:move', async (_, sourcePath: string, targetParentPath: s
 
 // Import operations
 ipcMain.handle('import:fromPath', async (event, options: ImportOptions) => {
-    return importService.importFromPath(options, (progress: ImportProgress) => {
+    const result = await importService.importFromPath(options, (progress: ImportProgress) => {
         mainWindow?.webContents.send('import:progress', progress);
     });
+    // The grid/folders should show new photos without a manual refresh.
+    mainWindow?.webContents.send('photos:refresh');
+    return result;
 });
 
 ipcMain.handle('import:files', async (event, filePaths: string[], options: any) => {
-    return importService.importFiles(filePaths, options, (progress: ImportProgress) => {
+    const result = await importService.importFiles(filePaths, options, (progress: ImportProgress) => {
         mainWindow?.webContents.send('import:progress', progress);
     });
+    mainWindow?.webContents.send('photos:refresh');
+    return result;
+});
+
+// Visual card import: flat file listing (marked with what the catalog already
+// has) + on-demand 320px previews cached on the internal disk.
+ipcMain.handle('import:scanCard', async (_event, dirPath: string) => {
+    const files = await importService.scanCardFiles(dirPath);
+    const known = new Set(
+        catalogDb.getAllPhotos(999999, 0).map((p: any) => `${p.file_name}|${p.file_size || 0}`)
+    );
+    return files.map(f => ({ ...f, alreadyImported: known.has(`${f.name}|${f.size}`) }));
+});
+
+const cardPreviewDir = () => path.join(app.getPath('userData'), 'card-previews');
+ipcMain.handle('import:cardPreview', async (_event, filePath: string) => {
+    try {
+        const dir = cardPreviewDir();
+        fs.mkdirSync(dir, { recursive: true });
+        const stat = await fs.promises.stat(filePath);
+        const key = crypto.createHash('md5')
+            .update(`${filePath}|${stat.size}|${Math.round(stat.mtimeMs)}`).digest('hex');
+        const out = path.join(dir, `${key}.webp`);
+        if (!fs.existsSync(out)) {
+            const ok = await thumbnailService.quickPreview(filePath, out);
+            if (!ok) return null;
+        }
+        return out;
+    } catch {
+        return null;
+    }
 });
 
 ipcMain.handle('import:reindex', async (_, photoId: string) => {

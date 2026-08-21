@@ -172,6 +172,41 @@ class ThumbnailService {
         }
     }
 
+    /**
+     * Fast 320px preview for the card-import dialog. Speed over fidelity:
+     * RAW files use their embedded JPEG (milliseconds) with a sips fallback —
+     * never the darktable pipeline, which can take a minute per file.
+     */
+    async quickPreview(sourcePath: string, outPath: string): Promise<boolean> {
+        let tempJpeg: string | null = null;
+        try {
+            const ext = path.extname(sourcePath).toLowerCase();
+            let src: string | Buffer = sourcePath;
+            if (RAW_EXTENSIONS.includes(ext)) {
+                const buffer = fs.readFileSync(sourcePath);
+                const jpegStart = this.findJpegMarker(buffer);
+                if (jpegStart >= 0) {
+                    src = buffer.slice(jpegStart);
+                } else {
+                    tempJpeg = path.join(this.cacheDir, `temp_qp_${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`);
+                    execSync(`sips -s format jpeg "${sourcePath}" --out "${tempJpeg}" 2>/dev/null`, { timeout: 15000 });
+                    if (!fs.existsSync(tempJpeg) || fs.statSync(tempJpeg).size === 0) return false;
+                    src = tempJpeg;
+                }
+            }
+            await sharp(src)
+                .rotate() // honour EXIF orientation
+                .resize(320, 320, { fit: 'inside', withoutEnlargement: true })
+                .webp({ quality: 72 })
+                .toFile(outPath);
+            return true;
+        } catch {
+            return false;
+        } finally {
+            if (tempJpeg) fs.promises.unlink(tempJpeg).catch(() => {});
+        }
+    }
+
     /** Compute a BlurHash from an existing (thumbnail-sized) file — backfill path. */
     async blurHashFromFile(filePath: string): Promise<string | null> {
         try {

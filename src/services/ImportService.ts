@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import catalogDb, { Photo } from '../database/Database';
 import metadataService, { ExtractedMetadata } from './MetadataService';
 import thumbnailService, { ThumbnailResult } from './ThumbnailService';
-import { SUPPORTED_EXTENSIONS, AFFINITY_EXTENSIONS } from '../database/schema';
+import { SUPPORTED_EXTENSIONS, AFFINITY_EXTENSIONS, RAW_EXTENSIONS } from '../database/schema';
 // XMP Service is in main process, so we import it conditionally
 // This service runs in main process so we can import directly
 let XmpService: any;
@@ -45,6 +45,8 @@ export interface ImportOptions {
     addToCollection?: string;
     moveFiles?: boolean;
     destinationPath?: string;
+    keywords?: string[];          // user keywords applied to every imported photo
+    deleteAfterImport?: boolean;  // remove the source (card) file once its copy is verified
 }
 
 export interface ImportProgress {
@@ -125,13 +127,12 @@ class ImportService {
                 });
 
                 try {
-                    // Check for duplicates
-                    if (options.skipDuplicates !== false) {
-                        const existing = catalogDb.getPhotoByPath(filePath);
-                        if (existing) {
-                            result.skippedFiles.push(filePath);
-                            continue;
-                        }
+                    // Check for duplicates — by path AND by name+size, so photos
+                    // already imported from this card (to a new path) are skipped
+                    // instead of duplicated on every re-import.
+                    if (options.skipDuplicates !== false && this.isAlreadyInCatalog(filePath)) {
+                        result.skippedFiles.push(filePath);
+                        continue;
                     }
 
                     // Process file
@@ -243,13 +244,10 @@ class ImportService {
             });
 
             try {
-                // Check for duplicates
-                if (options.skipDuplicates !== false) {
-                    const existing = catalogDb.getPhotoByPath(filePath);
-                    if (existing) {
-                        result.skippedFiles.push(filePath);
-                        continue;
-                    }
+                // Same duplicate check as importFromPath: path AND name+size.
+                if (options.skipDuplicates !== false && this.isAlreadyInCatalog(filePath)) {
+                    result.skippedFiles.push(filePath);
+                    continue;
                 }
 
                 const photoId = await this.processFile(filePath, { ...options, sourcePath: filePath });
@@ -321,9 +319,32 @@ class ImportService {
         // Handle file copy/move if destination is specified
         let finalPath = filePath;
         if (options.destinationPath) {
-            const destFilePath = path.join(options.destinationPath, fileInfo.fileName);
+            // The destination (incl. the dated subfolder) may not exist yet — the
+            // copy used to fail with ENOENT on every single file without this.
+            fs.mkdirSync(options.destinationPath, { recursive: true });
+
+            // Collision-safe name: two cards both have IMG_0001.JPG; never
+            // silently overwrite a different photo that's already there.
+            let destFilePath = path.join(options.destinationPath, fileInfo.fileName);
+            if (fs.existsSync(destFilePath) && fs.statSync(destFilePath).size !== fileInfo.fileSize) {
+                const ext = path.extname(fileInfo.fileName);
+                const base = path.basename(fileInfo.fileName, ext);
+                let n = 1;
+                do {
+                    destFilePath = path.join(options.destinationPath, `${base}_${n}${ext}`);
+                    n++;
+                } while (fs.existsSync(destFilePath) && fs.statSync(destFilePath).size !== fileInfo.fileSize);
+            }
+
             if (options.moveFiles) {
-                fs.renameSync(filePath, destFilePath);
+                try {
+                    fs.renameSync(filePath, destFilePath);
+                } catch (e: any) {
+                    // rename can't cross devices (card → disk): copy then remove.
+                    if (e?.code !== 'EXDEV') throw e;
+                    fs.copyFileSync(filePath, destFilePath);
+                    fs.unlinkSync(filePath);
+                }
             } else {
                 fs.copyFileSync(filePath, destFilePath);
             }
@@ -335,10 +356,25 @@ class ImportService {
                 if (fs.existsSync(xmpSourcePath)) {
                     const xmpDestPath = XmpSvc.getXmpPath(destFilePath);
                     if (options.moveFiles) {
-                        fs.renameSync(xmpSourcePath, xmpDestPath);
+                        try {
+                            fs.renameSync(xmpSourcePath, xmpDestPath);
+                        } catch (e: any) {
+                            if (e?.code !== 'EXDEV') throw e;
+                            fs.copyFileSync(xmpSourcePath, xmpDestPath);
+                            fs.unlinkSync(xmpSourcePath);
+                        }
                     } else {
                         fs.copyFileSync(xmpSourcePath, xmpDestPath);
                     }
+                }
+            }
+
+            // "Delete from card after import": only once the copy is verified
+            // byte-for-byte in size — never trade the original for a bad copy.
+            if (options.deleteAfterImport && !options.moveFiles) {
+                const copied = fs.statSync(destFilePath);
+                if (copied.size === fileInfo.fileSize) {
+                    try { fs.unlinkSync(filePath); } catch { /* card may be read-only */ }
                 }
             }
         }
@@ -388,7 +424,7 @@ class ImportService {
         // Insert into database
         const photoId = catalogDb.insertPhoto(photo);
 
-        // Handle keywords - merge from metadata and XMP
+        // Handle keywords - merge from metadata, XMP and the import dialog
         const allKeywords = new Set<string>();
 
         // Add keywords from embedded metadata
@@ -399,6 +435,12 @@ class ImportService {
         // Add keywords from XMP sidecar
         if (xmpData?.keywords) {
             xmpData.keywords.forEach(k => allKeywords.add(k));
+        }
+
+        // Keywords typed by the user in the import dialog (previously accepted
+        // by the UI but silently dropped here).
+        if (options.keywords) {
+            options.keywords.forEach(k => { if (k && k.trim()) allKeywords.add(k.trim()); });
         }
 
         if (allKeywords.size > 0) {
@@ -449,8 +491,12 @@ class ImportService {
                         indexed: true
                     });
 
-                    // Auto AI tagging: analyze image and store keywords
+                    // Auto AI tagging: analyze image and store keywords.
+                    // Opt-in (same switch as startup tagging) — loading the ONNX
+                    // model per import made card imports crawl on an external HDD.
                     try {
+                        const { settingsService } = require('../main/services/SettingsService');
+                        if (!settingsService.get('autoTagOnStartup')) throw { skipped: true };
                         const { analyzeImage, initializeAI } = require('../main/services/AITaggingService');
                         const aiReady = await initializeAI();
                         if (aiReady) {
@@ -472,6 +518,44 @@ class ImportService {
 
             onProgress?.(i + 1, photoIds.length);
         }
+    }
+
+    // Duplicate fingerprint: exact path, or same name+size anywhere in the
+    // catalog (the path changes when a card file is copied to its destination).
+    private isAlreadyInCatalog(filePath: string): boolean {
+        if (catalogDb.getPhotoByPath(filePath)) return true;
+        try {
+            const size = fs.statSync(filePath).size;
+            return !!catalogDb.findPhotoByNameAndSize(path.basename(filePath), size);
+        } catch {
+            return false;
+        }
+    }
+
+    /** Flat listing of a card's importable photos, newest first — feeds the
+     *  visual import dialog. No thumbnails here; previews stream separately. */
+    async scanCardFiles(dirPath: string): Promise<{
+        path: string; name: string; size: number; mtimeMs: number; ext: string; isRaw: boolean;
+    }[]> {
+        const files = await this.scanDirectory(dirPath, true);
+        const out: { path: string; name: string; size: number; mtimeMs: number; ext: string; isRaw: boolean }[] = [];
+        for (const f of files) {
+            if (!this.isSupportedFile(f)) continue;
+            try {
+                const st = fs.statSync(f);
+                const ext = path.extname(f).toLowerCase();
+                out.push({
+                    path: f,
+                    name: path.basename(f),
+                    size: st.size,
+                    mtimeMs: st.mtimeMs,
+                    ext,
+                    isRaw: RAW_EXTENSIONS.includes(ext)
+                });
+            } catch { /* unreadable entry — leave it out */ }
+        }
+        out.sort((a, b) => b.mtimeMs - a.mtimeMs);
+        return out;
     }
 
     private async scanDirectory(dirPath: string, recursive: boolean): Promise<string[]> {

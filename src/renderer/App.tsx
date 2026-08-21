@@ -8,7 +8,7 @@ import { PhotoGrid } from './components/PhotoGrid';
 import { LoupeView } from './components/LoupeView';
 import { InfoPanel } from './components/InfoPanel';
 import { ImportModal } from './components/ImportModal';
-import { ImportDialog, ImportOptions } from './components/ImportDialog';
+import { ImportCardDialog } from './components/ImportCardDialog';
 import { NewCatalogDialog } from './components/NewCatalogDialog';
 import { OnboardingWizard } from './components/OnboardingWizard';
 import './styles/globals.css';
@@ -121,30 +121,6 @@ const App: React.FC = () => {
             });
         });
         return () => unsubscribe();
-    }, []);
-
-    // Handle camera import
-    const handleCameraImport = useCallback(async (options: ImportOptions) => {
-        console.log('[App] Starting camera import:', options);
-        getStoreActions().setIsImporting(true);
-
-        try {
-            await window.api.importFromPath({
-                sourcePath: options.sourcePath,
-                destinationPath: options.destinationPath ? `${options.destinationPath}/${options.subfolderName}` : undefined,
-                recursive: true,
-                generateThumbnails: true,
-                extractMetadata: true,
-                keywords: options.keywords,
-                renamePattern: options.renamePattern,
-                customPattern: options.customPattern,
-                deleteAfterImport: options.deleteAfterImport
-            });
-
-            setCameraImport(prev => ({ ...prev, isOpen: false }));
-        } catch (error) {
-            console.error('[App] Camera import failed:', error);
-        }
     }, []);
 
     // Menu event listeners - use refs to avoid re-creating handlers
@@ -423,14 +399,13 @@ const App: React.FC = () => {
 
             <ImportModal />
 
-            {/* Camera Import Dialog */}
-            <ImportDialog
+            {/* Camera Import Dialog — visual grid of the card's photos */}
+            <ImportCardDialog
                 isOpen={cameraImport.isOpen}
-                sourcePath={cameraImport.dcimPath}
-                sourceName={cameraImport.volumeName}
-                photoCount={cameraImport.photoCount}
+                dcimPath={cameraImport.dcimPath}
+                volumeName={cameraImport.volumeName}
                 onClose={() => setCameraImport(prev => ({ ...prev, isOpen: false }))}
-                onImport={handleCameraImport}
+                onImported={() => getStoreActions().refreshCatalog()}
             />
 
             {/* New Catalog Dialog */}

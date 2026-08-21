@@ -333,6 +333,14 @@ class CatalogDatabase {
         return this.stmt('SELECT * FROM photos WHERE file_path = ?').get(filePath) as Photo | undefined;
     }
 
+    // Duplicate check that survives copying: a card photo imported to a folder
+    // gets a new path, so path equality alone re-imports the same shot every
+    // time. Name+size is a solid fingerprint for camera files.
+    findPhotoByNameAndSize(fileName: string, fileSize: number): Photo | undefined {
+        return this.stmt('SELECT * FROM photos WHERE file_name = ? AND file_size = ? LIMIT 1')
+            .get(fileName, fileSize) as Photo | undefined;
+    }
+
     getAllPhotos(limit: number = 1000, offset: number = 0): Photo[] {
         return this.stmt(`
             SELECT * FROM photos
