@@ -97,6 +97,12 @@ const applyPhotoFilters = (photos: Photo[], filters: any): Photo[] => {
         if (filters.rating?.max !== undefined && (p.rating || 0) > filters.rating.max) return false;
         if (filters.flag?.length && !filters.flag.includes(p.flag || 'none')) return false;
         if (filters.color_label?.length && !filters.color_label.includes(p.color_label || 'none')) return false;
+        if (filters.imported_within_days) {
+            const cutoff = Date.now() - filters.imported_within_days * 24 * 3600 * 1000;
+            // date_imported is "YYYY-MM-DD HH:MM:SS" (UTC, SQLite CURRENT_TIMESTAMP)
+            const t = p.date_imported ? Date.parse(p.date_imported.replace(' ', 'T') + 'Z') : 0;
+            if (!t || t < cutoff) return false;
+        }
         return true;
     });
 };

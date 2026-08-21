@@ -90,6 +90,7 @@ export interface FilterCriteria {
     search_text?: string;
     collection_id?: string;
     folder_path?: string;
+    imported_within_days?: number; // "recent imports" view
 }
 
 class CatalogDatabase {
@@ -447,12 +448,22 @@ class CatalogDatabase {
             params.push(...criteria.keywords);
         }
 
+        // "Recent imports": photos imported in the last N days. Sorted by import
+        // time — an old photo imported yesterday belongs at the top of this view.
+        if (criteria.imported_within_days && criteria.imported_within_days > 0) {
+            conditions.push(`date_imported >= datetime('now', ?)`);
+            params.push(`-${Math.floor(criteria.imported_within_days)} days`);
+        }
+
         params.push(limit, offset);
 
+        const orderBy = criteria.imported_within_days
+            ? 'date_imported DESC, date_taken DESC'
+            : 'date_taken DESC, date_imported DESC';
         const sql = `
             SELECT * FROM photos
             WHERE ${conditions.join(' AND ')}
-            ORDER BY date_taken DESC, date_imported DESC
+            ORDER BY ${orderBy}
             LIMIT ? OFFSET ?
         `;
 

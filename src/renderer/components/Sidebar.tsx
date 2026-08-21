@@ -21,7 +21,8 @@ import {
     ScanFace,
     Trash2,
     X,
-    BookOpen
+    BookOpen,
+    Download
 } from 'lucide-react';
 import { SettingsModal } from './SettingsModal';
 
@@ -281,6 +282,18 @@ export const Sidebar: React.FC = React.memo(() => {
                         count={totalPhotoCount}
                         isActive={!activeCollectionId && !activeFolderId && Object.keys(filters).length === 0}
                         onClick={handleShowAllPhotos}
+                    />
+                    <SidebarItem
+                        icon={<Download size={14} className="text-emerald-400" />}
+                        label={t('recentImports')}
+                        isActive={!!filters.imported_within_days}
+                        onClick={() => {
+                            const { setActiveCollectionId, setActiveFolderId, setFilters } = getStore();
+                            setActiveCollectionId(null);
+                            setActiveFolderId(null);
+                            // Last 7 days of imports, newest import first.
+                            setFilters({ imported_within_days: 7 });
+                        }}
                     />
                 </SidebarSection>
 

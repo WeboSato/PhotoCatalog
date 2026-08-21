@@ -113,6 +113,7 @@ export const translations = {
 
     // Sidebar
     allPhotos: 'All Photos',
+    recentImports: 'Recent Imports',
     quickFilters: 'Quick Filters',
     fiveStars: '5 Stars',
     fourPlusStars: '4+ Stars',
@@ -337,6 +338,7 @@ export const translations = {
 
     // Sidebar
     allPhotos: 'Toutes les photos',
+    recentImports: 'Imports récents',
     quickFilters: 'Filtres rapides',
     fiveStars: '5 Étoiles',
     fourPlusStars: '4+ Étoiles',

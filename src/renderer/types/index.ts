@@ -78,6 +78,7 @@ export interface FilterCriteria {
     search_text?: string;
     collection_id?: string;
     folder_path?: string;
+    imported_within_days?: number; // "recent imports" view
 }
 
 export interface ImportProgress {
