@@ -173,6 +173,53 @@ class ThumbnailService {
     }
 
     /**
+     * Full-resolution TIFF for the "linked edit copy" round-trip. Affinity (and
+     * any editor) can re-save a TIFF in place with a plain Cmd+S — which a RAW
+     * can never do — so this is what makes the Lightroom-style flow possible.
+     * Quality ladder: darktable-cli (real demosaic) → sips → embedded JPEG.
+     */
+    async renderEditableTiff(sourcePath: string, outPath: string): Promise<boolean> {
+        const ext = path.extname(sourcePath).toLowerCase();
+        try {
+            if (!RAW_EXTENSIONS.includes(ext)) {
+                // Standard formats: one sharp pass, full resolution.
+                await sharp(sourcePath).rotate().withMetadata().tiff({ compression: 'lzw' }).toFile(outPath);
+                return fs.existsSync(outPath) && fs.statSync(outPath).size > 0;
+            }
+
+            // RAW: darktable gives a real full-res demosaic when installed.
+            const darktablePath = '/Applications/darktable.app/Contents/MacOS/darktable-cli';
+            if (fs.existsSync(darktablePath)) {
+                try {
+                    execSync(`"${darktablePath}" "${sourcePath}" "${outPath}" 2>/dev/null`, {
+                        timeout: 120000,
+                        env: { ...process.env, HOME: process.env.HOME || '/tmp' }
+                    });
+                    if (fs.existsSync(outPath) && fs.statSync(outPath).size > 0) return true;
+                } catch { /* fall through */ }
+            }
+
+            // sips (macOS built-in) decodes most RAW formats at full size.
+            try {
+                execSync(`sips -s format tiff "${sourcePath}" --out "${outPath}" 2>/dev/null`, { timeout: 60000 });
+                if (fs.existsSync(outPath) && fs.statSync(outPath).size > 0) return true;
+            } catch { /* fall through */ }
+
+            // Last resort: the RAW's embedded JPEG (smaller, but always available).
+            const buffer = fs.readFileSync(sourcePath);
+            const jpegStart = this.findJpegMarker(buffer);
+            if (jpegStart >= 0) {
+                await sharp(buffer.slice(jpegStart)).rotate().withMetadata().tiff({ compression: 'lzw' }).toFile(outPath);
+                return fs.existsSync(outPath) && fs.statSync(outPath).size > 0;
+            }
+            return false;
+        } catch {
+            fs.promises.unlink(outPath).catch(() => {});
+            return false;
+        }
+    }
+
+    /**
      * Fast 320px preview for the card-import dialog. Speed over fidelity:
      * RAW files use their embedded JPEG (milliseconds) with a sips fallback —
      * never the darktable pipeline, which can take a minute per file.

@@ -42,6 +42,7 @@ export interface Photo {
     preview_path?: string;
     blur_hash?: string;
     edit_copy_path?: string;
+    edited_from_id?: string; // set on a linked edit copy: id of the source photo
     keywords?: string[];
     indexed: boolean;
     develop_settings?: string; // JSON string of develop settings
@@ -174,6 +175,18 @@ class CatalogDatabase {
         } catch (e) {
             console.warn('[Database] Migration face_crop_path check failed:', e);
         }
+
+        // Migration: linked edit copies ("virtual copies" sent to Affinity) point
+        // back at the photo they were made from.
+        try {
+            const cols = this.db!.pragma('table_info(photos)') as { name: string }[];
+            if (!cols.some(col => col.name === 'edited_from_id')) {
+                this.db!.exec('ALTER TABLE photos ADD COLUMN edited_from_id TEXT');
+                console.log('[Database] Migration: Added edited_from_id column');
+            }
+        } catch (e) {
+            console.warn('[Database] Migration edited_from_id check failed:', e);
+        }
     }
 
     private createOptimizedIndexes(): void {
@@ -290,7 +303,8 @@ class CatalogDatabase {
         const allowedFields = [
             'rating', 'flag', 'color_label', 'title', 'caption', 'copyright', 'creator',
             'thumbnail_path', 'preview_path', 'indexed', 'width', 'height', 'orientation',
-            'is_raw', 'develop_settings', 'edit_copy_path', 'blur_hash'
+            'is_raw', 'develop_settings', 'edit_copy_path', 'blur_hash',
+            'date_taken', 'edited_from_id'
         ];
 
         const fields: string[] = [];

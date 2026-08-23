@@ -91,6 +91,7 @@ contextBridge.exposeInMainWorld('api', {
     // External editor operations
     getAvailableEditors: () => ipcRenderer.invoke('editor:getAvailable'),
     openInEditor: (photoPath: string, photoId: string, editorId?: string) => ipcRenderer.invoke('editor:open', photoPath, photoId, editorId),
+    editLinkedCopy: (photoId: string) => ipcRenderer.invoke('editor:editLinkedCopy', photoId),
     openInAffinityPhoto: (photoPath: string, photoId: string) => ipcRenderer.invoke('editor:openInAffinity', photoPath, photoId),
     linkEditedFile: (photoId: string) => ipcRenderer.invoke('editor:linkEditedFile', photoId),
 
@@ -352,6 +353,7 @@ export interface ElectronAPI {
 
     getAvailableEditors: () => Promise<any[]>;
     openInEditor: (photoPath: string, photoId: string, editorId?: string) => Promise<any>;
+    editLinkedCopy: (photoId: string) => Promise<{ success: boolean; copyPath?: string; copyPhotoId?: string; error?: string }>;
     openInAffinityPhoto: (photoPath: string, photoId: string) => Promise<any>;
     linkEditedFile: (photoId: string) => Promise<{ editCopyPath: string; thumbnailPath: string | null } | null>;
 

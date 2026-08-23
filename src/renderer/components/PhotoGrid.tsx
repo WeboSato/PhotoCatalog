@@ -278,6 +278,10 @@ const PhotoCell = React.memo<{
             )}
             {/* File type badge - show AFI for Affinity edits, RAW for raw files */}
             {(() => {
+                // Linked edit copy ("virtual copy" sent to Affinity)
+                if ((photo as any).edited_from_id) {
+                    return <span className="badge-raw" style={{ backgroundColor: '#d4d4d8', color: '#000' }}>COPIE</span>;
+                }
                 // Check for Affinity edit
                 const hasAffinityEdit = photo.edit_copy_path &&
                     (photo.edit_copy_path.toLowerCase().endsWith('.afphoto') ||
@@ -454,10 +458,11 @@ const ContextMenu: React.FC<{
     editors: { id: string; name: string }[];
     onClose: () => void;
     onEditIn: (editorId: string) => void;
+    onEditLinkedCopy: () => void;
     onLinkEditedFile: () => void;
     onGoToFolder: () => void;
     onShowInFinder: () => void;
-}> = ({ x, y, photo, editors, onClose, onEditIn, onLinkEditedFile, onGoToFolder, onShowInFinder }) => {
+}> = ({ x, y, photo, editors, onClose, onEditIn, onEditLinkedCopy, onLinkEditedFile, onGoToFolder, onShowInFinder }) => {
     const menuRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -486,6 +491,13 @@ const ContextMenu: React.FC<{
             <div className="px-3 py-1 text-xs text-gray-500 border-b border-[#444]">
                 {photo.file_name}
             </div>
+            <button
+                className="w-full px-3 py-2 text-left text-sm text-gray-100 hover:bg-white/15 hover:text-white font-medium"
+                onClick={onEditLinkedCopy}
+                title="Copie TIFF créée à côté de l'original, liée au catalogue. ⌘S dans Affinity met la grille à jour tout seul."
+            >
+                🎨 Modifier une copie liée (Affinity)
+            </button>
             {editors.length > 0 ? (
                 <>
                     <div className="px-3 py-1 text-xs text-gray-500 mt-1">Edit in...</div>
@@ -763,6 +775,22 @@ export const PhotoGrid: React.FC = React.memo(() => {
 
     // State for save path notification
     const [savePathNotification, setSavePathNotification] = useState<{ show: boolean; path: string }>({ show: false, path: '' });
+
+    // Toast for the linked-copy flow (success or error)
+    const [linkedCopyToast, setLinkedCopyToast] = useState<{ show: boolean; error?: string }>({ show: false });
+
+    // Lightroom-style: create the linked TIFF copy and hand it to Affinity.
+    const handleEditLinkedCopy = useCallback(async () => {
+        if (!contextMenu.photo) return;
+        closeContextMenu();
+        try {
+            const r = await window.api.editLinkedCopy(contextMenu.photo.id);
+            setLinkedCopyToast({ show: true, error: r.success ? undefined : (r.error || 'Échec') });
+        } catch (e: any) {
+            setLinkedCopyToast({ show: true, error: String(e?.message || e) });
+        }
+        setTimeout(() => setLinkedCopyToast({ show: false }), 9000);
+    }, [contextMenu.photo, closeContextMenu]);
 
     // Handle edit in external editor
     const handleEditIn = useCallback(async (editorId: string) => {
@@ -1224,6 +1252,7 @@ export const PhotoGrid: React.FC = React.memo(() => {
                     editors={availableEditors}
                     onClose={closeContextMenu}
                     onEditIn={handleEditIn}
+                    onEditLinkedCopy={handleEditLinkedCopy}
                     onLinkEditedFile={handleLinkEditedFile}
                     onGoToFolder={handleGoToFolder}
                     onShowInFinder={handleShowInFinder}
@@ -1254,6 +1283,15 @@ export const PhotoGrid: React.FC = React.memo(() => {
                             ✕
                         </button>
                     </div>
+                </div>
+            )}
+
+            {/* Linked copy toast */}
+            {linkedCopyToast.show && (
+                <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 glass-strong text-white px-5 py-3 rounded-lg shadow-2xl max-w-xl text-sm">
+                    {linkedCopyToast.error
+                        ? <>⚠️ Copie liée impossible : {linkedCopyToast.error}</>
+                        : <>🎨 Copie liée envoyée à Affinity — fais simplement <b>⌘S</b> là-bas : la photo se met à jour ici toute seule.</>}
                 </div>
             )}
 

@@ -907,6 +907,19 @@ app.whenReady().then(async () => {
     // Watch for SD card / external drive insertions
     setupVolumeWatcher();
 
+    // Linked edit copies: re-arm the save-watchers and poll. Each Cmd+S in the
+    // editor refreshes that copy's thumbnails and the grid, hands-free.
+    {
+        const armed = externalEditorService.loadLinkedEditsFromCatalog();
+        if (armed > 0) console.log(`[LinkedEdit] watching ${armed} linked cop${armed > 1 ? 'ies' : 'y'}`);
+        setInterval(async () => {
+            try {
+                const updated = await externalEditorService.checkLinkedEditsOnce();
+                if (updated.length > 0) mainWindow?.webContents.send('photos:refresh');
+            } catch { /* next tick */ }
+        }, 3500);
+    }
+
     // A card inserted BEFORE launch never fired the watcher, so no import dialog
     // ever appeared for it. Check the volumes that are already mounted too.
     setTimeout(() => {
@@ -1697,6 +1710,22 @@ const setupAffinityFileWatchers = () => {
         console.error('[AffinityWatcher] Error setting up polling:', error);
     }
 };
+
+// Lightroom-style round-trip: create a linked TIFF copy next to the original,
+// open it in Affinity, and let the watcher bring every Cmd+S back by itself.
+ipcMain.handle('editor:editLinkedCopy', async (_, photoId: string) => {
+    const created = await externalEditorService.createLinkedEditCopy(photoId);
+    if ('error' in created) return { success: false, error: created.error };
+
+    const opened = await externalEditorService.openInEditor(created.copyPath, created.copyPhotoId, undefined, false);
+    mainWindow?.webContents.send('photos:refresh');
+    return {
+        success: !!opened,
+        copyPath: created.copyPath,
+        copyPhotoId: created.copyPhotoId,
+        error: opened ? undefined : 'Affinity Photo introuvable'
+    };
+});
 
 ipcMain.handle('editor:open', async (_, photoPath: string, photoId: string, editorId?: string) => {
     const result = await externalEditorService.openInEditor(photoPath, photoId, editorId, true);

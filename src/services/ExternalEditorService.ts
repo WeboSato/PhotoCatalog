@@ -2,6 +2,9 @@ import { spawn, ChildProcess, execSync } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
+import catalogDb from '../database/Database';
+import thumbnailService from './ThumbnailService';
+import importService from './ImportService';
 
 export interface ExternalEditor {
     id: string;
@@ -391,6 +394,137 @@ class ExternalEditorService {
             console.error('[ExternalEditorService] Failed to export for editing:', error);
             return null;
         }
+    }
+
+    // ---- Lightroom-style linked edit copies --------------------------------
+    // A "virtual copy" TIFF is created NEXT TO the original, registered in the
+    // catalog (edited_from_id → source), and opened in the editor. TIFF is the
+    // key: Affinity re-saves it in place with a plain Cmd+S — impossible with a
+    // RAW. A poll watcher spots each save and refreshes the copy's thumbnails,
+    // so the edit "comes back by itself", exactly like Lightroom.
+    // Watched files: path → last seen stat, plus a settling stat so we never
+    // regenerate from a file Affinity is still writing.
+    private linkedEdits = new Map<string, {
+        photoId: string;
+        mtimeMs: number;
+        size: number;
+        pending?: { mtimeMs: number; size: number };
+    }>();
+
+    /** Create (or reuse) the linked TIFF copy for a photo and register it. */
+    async createLinkedEditCopy(photoId: string): Promise<{ copyPath: string; copyPhotoId: string } | { error: string }> {
+        const original = catalogDb.getPhoto(photoId);
+        if (!original) return { error: 'Photo introuvable' };
+        if (!fs.existsSync(original.file_path)) return { error: `Fichier source manquant: ${original.file_path}` };
+
+        // Re-editing an existing linked copy? Just reopen it.
+        if (original.edited_from_id) {
+            return { copyPath: original.file_path, copyPhotoId: original.id };
+        }
+        const existing = catalogDb.getDb()
+            .prepare('SELECT id, file_path FROM photos WHERE edited_from_id = ? LIMIT 1')
+            .get(photoId) as { id: string; file_path: string } | undefined;
+        if (existing && fs.existsSync(existing.file_path)) {
+            return { copyPath: existing.file_path, copyPhotoId: existing.id };
+        }
+
+        // Build a collision-safe "<name>-Edit.tif" next to the original.
+        const dir = path.dirname(original.file_path);
+        const base = path.basename(original.file_path, path.extname(original.file_path));
+        let copyPath = path.join(dir, `${base}-Edit.tif`);
+        let n = 2;
+        while (fs.existsSync(copyPath)) copyPath = path.join(dir, `${base}-Edit-${n++}.tif`);
+
+        const ok = await thumbnailService.renderEditableTiff(original.file_path, copyPath);
+        if (!ok) return { error: 'Impossible de générer le TIFF de travail' };
+
+        // Register the copy as a real catalog photo (metadata + thumbnails),
+        // then glue it to the original: same capture date so it sits right next
+        // to it in the grid, same rating/label, provenance via edited_from_id.
+        const imported = await importService.importFiles([copyPath], {
+            generateThumbnails: true,
+            extractMetadata: true,
+            skipDuplicates: false
+        });
+        const copyPhotoId = imported.importedIds[0];
+        if (!copyPhotoId) return { error: imported.errors[0]?.error || 'Import de la copie impossible' };
+
+        catalogDb.updatePhoto(copyPhotoId, {
+            date_taken: original.date_taken,
+            rating: original.rating,
+            color_label: original.color_label,
+            edited_from_id: original.id
+        } as any);
+        catalogDb.updatePhoto(original.id, { edit_copy_path: copyPath } as any);
+
+        this.registerLinkedEdit(copyPath, copyPhotoId);
+        return { copyPath, copyPhotoId };
+    }
+
+    /** Start watching a linked copy for saves from the editor. */
+    registerLinkedEdit(filePath: string, photoId: string): void {
+        try {
+            const st = fs.statSync(filePath);
+            this.linkedEdits.set(filePath, { photoId, mtimeMs: st.mtimeMs, size: st.size });
+        } catch { /* file gone — nothing to watch */ }
+    }
+
+    /** Re-arm watchers for every linked copy in the catalog (startup). */
+    loadLinkedEditsFromCatalog(): number {
+        try {
+            const rows = catalogDb.getDb()
+                .prepare('SELECT id, file_path FROM photos WHERE edited_from_id IS NOT NULL')
+                .all() as { id: string; file_path: string }[];
+            for (const r of rows) this.registerLinkedEdit(r.file_path, r.id);
+            return rows.length;
+        } catch {
+            return 0;
+        }
+    }
+
+    /**
+     * One watcher tick. A change is only acted on once the file has SETTLED
+     * (same mtime+size on two consecutive ticks), so a TIFF Affinity is mid-way
+     * through writing never produces a corrupt thumbnail. Returns the photoIds
+     * whose thumbnails were refreshed.
+     */
+    async checkLinkedEditsOnce(): Promise<string[]> {
+        const updated: string[] = [];
+        for (const [filePath, entry] of this.linkedEdits) {
+            let st: fs.Stats;
+            try {
+                st = fs.statSync(filePath);
+            } catch { continue; } // unmounted / deleted — keep quiet, keep watching
+
+            const changed = st.mtimeMs !== entry.mtimeMs || st.size !== entry.size;
+            if (!changed) { entry.pending = undefined; continue; }
+
+            if (entry.pending && entry.pending.mtimeMs === st.mtimeMs && entry.pending.size === st.size) {
+                // Stable across two ticks → the save is finished.
+                entry.mtimeMs = st.mtimeMs;
+                entry.size = st.size;
+                entry.pending = undefined;
+                try {
+                    const t = await thumbnailService.generateThumbnails(filePath, { forceRegenerate: true });
+                    if (t) {
+                        catalogDb.updatePhoto(entry.photoId, {
+                            thumbnail_path: t.thumbnailPath,
+                            preview_path: t.previewPath,
+                            blur_hash: (t as any).blurHash || null,
+                            width: t.width,
+                            height: t.height
+                        } as any);
+                        updated.push(entry.photoId);
+                        console.log(`[LinkedEdit] ${path.basename(filePath)} saved in editor → catalog refreshed`);
+                    }
+                } catch (e) {
+                    console.error('[LinkedEdit] thumbnail refresh failed:', e);
+                }
+            } else {
+                entry.pending = { mtimeMs: st.mtimeMs, size: st.size };
+            }
+        }
+        return updated;
     }
 
     // Watch for changes to an edited file
