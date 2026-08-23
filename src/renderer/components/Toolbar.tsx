@@ -471,7 +471,8 @@ const Toolbar: React.FC = () => {
         const { photos, activePhotoId } = useCatalogStore.getState();
         const photo = photos.find(p => p.id === activePhotoId);
         if (photo) {
-            await window.api.openInAffinityPhoto(photo.file_path, photo.id);
+            // Linked-copy flow: TIFF copy beside the original, Cmd+S round-trips.
+            await window.api.editLinkedCopy(photo.id);
         }
     };
 

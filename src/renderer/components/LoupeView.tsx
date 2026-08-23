@@ -241,7 +241,8 @@ export const LoupeView: React.FC = () => {
 
     const handleOpenInAffinity = async () => {
         if (activePhoto) {
-            await window.api.openInAffinityPhoto(activePhoto.file_path, activePhoto.id);
+            // Linked-copy flow: TIFF copy beside the original, Cmd+S round-trips.
+            await window.api.editLinkedCopy(activePhoto.id);
         }
         setContextMenu(null);
     };

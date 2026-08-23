@@ -795,6 +795,13 @@ export const PhotoGrid: React.FC = React.memo(() => {
     // Handle edit in external editor
     const handleEditIn = useCallback(async (editorId: string) => {
         if (!contextMenu.photo) return;
+        // Affinity always goes through the linked-copy flow — the legacy path
+        // (same-format copy, no watcher) is exactly the trap where Cmd+S never
+        // came back to the catalog.
+        if (editorId === 'affinity-photo') {
+            await handleEditLinkedCopy();
+            return;
+        }
         try {
             const result = await window.api.openInEditor(contextMenu.photo.file_path, contextMenu.photo.id, editorId);
             if (result && result.editCopyPath) {
