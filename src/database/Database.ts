@@ -337,6 +337,10 @@ class CatalogDatabase {
 
         if (fields.length === 0) return;
 
+        // Any update stamps updated_at — the renderer versions image URLs with
+        // it, so regenerated thumbnails (same path) show fresh pixels at once
+        // instead of the browser's long-max-age cached bitmap.
+        fields.push('updated_at = CURRENT_TIMESTAMP');
         values.push(id);
         const stmt = this.getDb().prepare(`UPDATE photos SET ${fields.join(', ')} WHERE id = ?`);
         stmt.run(...values);

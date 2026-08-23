@@ -469,13 +469,28 @@ class ExternalEditorService {
         } catch { /* file gone — nothing to watch */ }
     }
 
-    /** Re-arm watchers for every linked copy in the catalog (startup). */
+    /** Re-arm watchers for every linked copy in the catalog (startup). A copy
+     *  saved WHILE THE APP WAS CLOSED (file newer than its thumbnail) is armed
+     *  as already-changed, so the first watcher ticks bring the edit in. */
     loadLinkedEditsFromCatalog(): number {
         try {
             const rows = catalogDb.getDb()
-                .prepare('SELECT id, file_path FROM photos WHERE edited_from_id IS NOT NULL')
-                .all() as { id: string; file_path: string }[];
-            for (const r of rows) this.registerLinkedEdit(r.file_path, r.id);
+                .prepare('SELECT id, file_path, thumbnail_path FROM photos WHERE edited_from_id IS NOT NULL')
+                .all() as { id: string; file_path: string; thumbnail_path: string | null }[];
+            for (const r of rows) {
+                this.registerLinkedEdit(r.file_path, r.id);
+                try {
+                    const fileM = fs.statSync(r.file_path).mtimeMs;
+                    const thumbM = r.thumbnail_path && fs.existsSync(r.thumbnail_path)
+                        ? fs.statSync(r.thumbnail_path).mtimeMs : 0;
+                    if (fileM > thumbM + 1500) {
+                        // Pretend our last-known state is ancient → change detected.
+                        const e = this.linkedEdits.get(r.file_path);
+                        if (e) { e.mtimeMs = 0; e.size = -1; }
+                        console.log(`[LinkedEdit] ${path.basename(r.file_path)} was saved while the app was closed — catching up`);
+                    }
+                } catch { /* keep watching anyway */ }
+            }
             return rows.length;
         } catch {
             return 0;

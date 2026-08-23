@@ -138,7 +138,7 @@ const PhotoCell = React.memo<{
     onColorChange?: (color: string) => void;
     onReject?: () => void;
 }>(({ photo, isSelected, size, inSurveyMode, onClick, onDblClick, onContextMenu, onRatingChange, onColorChange, onReject }) => {
-    const thumbUrl = useMemo(() => getThumbnailUrl(photo), [photo.thumbnail_path]);
+    const thumbUrl = useMemo(() => getThumbnailUrl(photo), [photo.thumbnail_path, photo.updated_at]);
 
     // Any thumbnail that has loaded once stays "loaded" for the whole session, so a
     // grid reload (e.g. after a background refresh) never flashes a spinner over an
@@ -440,6 +440,7 @@ const PhotoCell = React.memo<{
     prev.photo.color_label === next.photo.color_label &&
     prev.photo.flag === next.photo.flag &&
     prev.photo.thumbnail_path === next.photo.thumbnail_path &&
+    prev.photo.updated_at === next.photo.updated_at &&
     prev.photo.file_type === next.photo.file_type &&
     prev.photo.edit_copy_path === next.photo.edit_copy_path &&
     prev.photo.blur_hash === next.photo.blur_hash &&

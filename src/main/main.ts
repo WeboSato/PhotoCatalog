@@ -592,8 +592,9 @@ function setupVolumeWatcher() {
 app.whenReady().then(async () => {
     // Register protocol handler for local images
     protocol.handle('local-image', async (request) => {
-        // Remove the protocol prefix and decode each path component
-        const rawPath = request.url.replace('local-image://', '');
+        // Remove the protocol prefix and decode each path component.
+        // A ?v=… query is a renderer-side cache-buster — strip it from the path.
+        const rawPath = request.url.replace('local-image://', '').split('?')[0];
         const filePath = rawPath.split('/').map(part => decodeURIComponent(part)).join('/');
 
         try {

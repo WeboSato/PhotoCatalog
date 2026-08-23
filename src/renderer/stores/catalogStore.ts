@@ -31,6 +31,7 @@ export interface Photo {
     blur_hash?: string;
     edit_copy_path?: string;  // Path to external edit copy
     edited_from_id?: string;  // linked edit copy: id of the source photo
+    updated_at?: string;      // bumped on every update; versions image URLs
     develop_settings?: string; // JSON string of DevelopmentSettings
 }
 
