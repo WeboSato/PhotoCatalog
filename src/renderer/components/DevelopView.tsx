@@ -5,7 +5,7 @@ import {
     Sun, Contrast, Droplet, Thermometer, Palette,
     RotateCcw, ZoomIn, ZoomOut, ChevronLeft, ChevronDown, Eye, EyeOff,
     Undo, Redo, Save, Focus, Aperture, Circle, Layers,
-    Sliders, Check, Sparkles
+    Sliders, Check, Sparkles, Crop, X as XIcon
 } from 'lucide-react';
 
 // ==========================================
@@ -334,7 +334,110 @@ export const DevelopView: React.FC = () => {
     const [activePresetId, setActivePresetId] = useState<string | null>(null);
 
     const activePhoto = photos.find(p => p.id === activePhotoId);
+    // Bumped after a crop is applied so the <img> remounts and revalidates the
+    // regenerated (same-URL) preview instead of showing the stale cached one.
+    const [imgVersion, setImgVersion] = useState(0);
     const imageSrc = activePhoto ? getPreviewUrl(activePhoto) || getImageUrl(activePhoto.file_path) : null;
+
+    // ---- Recadrage non destructif (façon Lightroom) -----------------------
+    // Le rect est normalisé (0..1) par rapport à l'image ORIGINALE complète et
+    // vit dans develop_settings.crop. Le fichier n'est jamais modifié : seules
+    // les vignettes sont re-rendues, et on peut revenir en arrière à tout moment.
+    const [cropMode, setCropMode] = useState(false);
+    const [cropRect, setCropRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+    const [cropAspect, setCropAspect] = useState<number | null>(null); // en pixels image (w/h); null = libre
+    const [uncroppedSrc, setUncroppedSrc] = useState<string | null>(null);
+    const [hasSavedCrop, setHasSavedCrop] = useState(false);
+    const [applyingCrop, setApplyingCrop] = useState(false);
+    const cropImgRef = useRef<HTMLImageElement>(null);
+    const cropDragRef = useRef<null | { mode: string; startX: number; startY: number; rect: { x: number; y: number; w: number; h: number } }>(null);
+
+    const readSavedCrop = useCallback((): { x: number; y: number; w: number; h: number } | null => {
+        try {
+            const ds = activePhoto?.develop_settings ? JSON.parse(activePhoto.develop_settings as any) : null;
+            return ds?.crop || null;
+        } catch { return null; }
+    }, [activePhoto]);
+
+    const enterCropMode = useCallback(async () => {
+        if (!activePhoto) return;
+        const saved = readSavedCrop();
+        setHasSavedCrop(!!saved);
+        setCropRect(saved || { x: 0.05, y: 0.05, w: 0.9, h: 0.9 });
+        setCropAspect(null);
+        setUncroppedSrc(null);
+        setCropMode(true);
+        // Le preview stocké est déjà recadré : il faut l'image COMPLÈTE pour recadrer.
+        const p = await window.api.getUncroppedPreview(activePhoto.id);
+        setUncroppedSrc(p ? getImageUrl(p) : (imageSrc || null));
+    }, [activePhoto, imageSrc, readSavedCrop]);
+
+    const clampRect = (r: { x: number; y: number; w: number; h: number }) => {
+        const w = Math.max(0.05, Math.min(1, r.w));
+        const h = Math.max(0.05, Math.min(1, r.h));
+        return { x: Math.max(0, Math.min(1 - w, r.x)), y: Math.max(0, Math.min(1 - h, r.y)), w, h };
+    };
+
+    // Verrouille la hauteur sur la largeur selon l'aspect choisi (en px image).
+    const lockAspect = useCallback((r: { x: number; y: number; w: number; h: number }, aspect: number | null) => {
+        const img = cropImgRef.current;
+        if (!aspect || !img || !img.naturalWidth) return r;
+        const W = img.naturalWidth, H = img.naturalHeight;
+        const h = (r.w * W) / (aspect * H);
+        return clampRect({ ...r, h });
+    }, []);
+
+    const startCropDrag = useCallback((e: React.PointerEvent, mode: string) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!cropRect) return;
+        cropDragRef.current = { mode, startX: e.clientX, startY: e.clientY, rect: { ...cropRect } };
+
+        const onMove = (ev: PointerEvent) => {
+            const drag = cropDragRef.current;
+            const img = cropImgRef.current;
+            if (!drag || !img) return;
+            const b = img.getBoundingClientRect();
+            const dx = (ev.clientX - drag.startX) / b.width;
+            const dy = (ev.clientY - drag.startY) / b.height;
+            let r = { ...drag.rect };
+            if (drag.mode === 'move') {
+                r.x += dx; r.y += dy;
+            } else {
+                if (drag.mode.includes('w')) { r.x += dx; r.w -= dx; }
+                if (drag.mode.includes('e')) { r.w += dx; }
+                if (drag.mode.includes('n')) { r.y += dy; r.h -= dy; }
+                if (drag.mode.includes('s')) { r.h += dy; }
+                if (r.w < 0.05) r.w = 0.05;
+                if (r.h < 0.05) r.h = 0.05;
+            }
+            setCropRect(clampRect(cropAspect && drag.mode !== 'move' ? lockAspect(r, cropAspect) : r));
+        };
+        const onUp = () => {
+            cropDragRef.current = null;
+            window.removeEventListener('pointermove', onMove);
+            window.removeEventListener('pointerup', onUp);
+        };
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+    }, [cropRect, cropAspect, lockAspect]);
+
+    const applyCropNow = useCallback(async (rect: { x: number; y: number; w: number; h: number } | null) => {
+        if (!activePhoto) return;
+        setApplyingCrop(true);
+        try {
+            const r = await window.api.applyCrop(activePhoto.id, rect);
+            if (r?.photo) updatePhoto(activePhoto.id, r.photo);
+            // Le crop vit dans develop_settings : garde l'état local cohérent
+            // pour qu'un « Sauvegarder » des réglages n'écrase pas le recadrage.
+            setSettings(prev => ({ ...(prev as any), crop: rect || undefined } as any));
+            setCropMode(false);
+            setImgVersion(v => v + 1);
+        } catch (e) {
+            console.error('applyCrop failed:', e);
+        }
+        setApplyingCrop(false);
+    }, [activePhoto, updatePhoto]);
 
     // Charger les reglages existants quand la photo change
     useEffect(() => {
@@ -596,6 +699,12 @@ export const DevelopView: React.FC = () => {
                             <Redo size={16} />
                         </button>
                         <div className="w-px h-4 bg-gray-600 mx-1" />
+                        <button onClick={() => (cropMode ? setCropMode(false) : enterCropMode())}
+                            title="Recadrer (non destructif — réversible à tout moment)"
+                            className={`p-2 rounded ${cropMode ? 'bg-white/15 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}>
+                            <Crop size={16} />
+                        </button>
+                        <div className="w-px h-4 bg-gray-600 mx-1" />
                         <button onClick={() => setShowBefore(!showBefore)}
                             title="Avant/Apres (\\)"
                             className={`p-2 rounded ${showBefore ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}>
@@ -624,8 +733,103 @@ export const DevelopView: React.FC = () => {
                 </div>
 
                 <div className="flex-1 flex items-center justify-center overflow-auto p-4">
+                    {cropMode ? (
+                        <div className="flex flex-col items-center gap-3 max-w-full max-h-full">
+                            {/* Barre du recadrage */}
+                            <div className="flex items-center gap-2 text-xs">
+                                <span className="text-gray-400 mr-1">Ratio :</span>
+                                {([
+                                    { label: 'Libre', v: null },
+                                    { label: 'Original', v: (cropImgRef.current?.naturalWidth || 3) / (cropImgRef.current?.naturalHeight || 2) },
+                                    { label: '1:1', v: 1 },
+                                    { label: '3:2', v: 3 / 2 },
+                                    { label: '4:5', v: 4 / 5 },
+                                    { label: '16:9', v: 16 / 9 },
+                                ] as { label: string; v: number | null }[]).map(a => (
+                                    <button key={a.label}
+                                        onClick={() => { setCropAspect(a.v); if (cropRect) setCropRect(r => lockAspect(r!, a.v)); }}
+                                        className={`px-2 py-1 rounded border ${cropAspect === a.v ? 'border-white/40 bg-white/10 text-white' : 'border-[#444] text-gray-400 hover:border-[#666]'}`}>
+                                        {a.label}
+                                    </button>
+                                ))}
+                                <div className="w-px h-4 bg-gray-600 mx-1" />
+                                <button onClick={() => cropRect && applyCropNow(cropRect)} disabled={applyingCrop || !cropRect}
+                                    className="px-3 py-1 rounded bg-green-600 hover:bg-green-700 text-white disabled:opacity-50">
+                                    {applyingCrop ? 'Application…' : 'Appliquer'}
+                                </button>
+                                {hasSavedCrop && (
+                                    <button onClick={() => applyCropNow(null)} disabled={applyingCrop}
+                                        title="Revenir à l'image complète — le fichier original n'a jamais été modifié"
+                                        className="px-3 py-1 rounded bg-white/10 hover:bg-white/20 text-gray-200">
+                                        Image complète
+                                    </button>
+                                )}
+                                <button onClick={() => setCropMode(false)} disabled={applyingCrop}
+                                    className="p-1.5 rounded text-gray-400 hover:text-white hover:bg-gray-700" title="Annuler">
+                                    <XIcon size={14} />
+                                </button>
+                            </div>
+
+                            {/* Image complète + rectangle de recadrage */}
+                            <div className="relative inline-block overflow-hidden select-none" style={{ maxWidth: '100%', maxHeight: 'calc(100% - 40px)' }}>
+                                {!uncroppedSrc ? (
+                                    <div className="w-[480px] h-[320px] flex items-center justify-center text-gray-500 text-sm">Préparation de l'image complète…</div>
+                                ) : (
+                                    <>
+                                        <img
+                                            ref={cropImgRef}
+                                            src={uncroppedSrc}
+                                            alt=""
+                                            draggable={false}
+                                            className="max-w-full block"
+                                            style={{ maxHeight: 'calc(100vh - 220px)' }}
+                                        />
+                                        {cropRect && (
+                                            <div
+                                                onPointerDown={(e) => startCropDrag(e, 'move')}
+                                                className="absolute border-2 border-white/90 cursor-move"
+                                                style={{
+                                                    left: `${cropRect.x * 100}%`,
+                                                    top: `${cropRect.y * 100}%`,
+                                                    width: `${cropRect.w * 100}%`,
+                                                    height: `${cropRect.h * 100}%`,
+                                                    boxShadow: '0 0 0 100000px rgba(0,0,0,0.55)',
+                                                }}
+                                            >
+                                                {/* Grille des tiers */}
+                                                <div className="absolute inset-0 pointer-events-none opacity-40">
+                                                    <div className="absolute left-1/3 top-0 bottom-0 w-px bg-white" />
+                                                    <div className="absolute left-2/3 top-0 bottom-0 w-px bg-white" />
+                                                    <div className="absolute top-1/3 left-0 right-0 h-px bg-white" />
+                                                    <div className="absolute top-2/3 left-0 right-0 h-px bg-white" />
+                                                </div>
+                                                {/* Poignées d'angle */}
+                                                {(['nw', 'ne', 'sw', 'se'] as const).map(c => (
+                                                    <div key={c}
+                                                        onPointerDown={(e) => startCropDrag(e, c)}
+                                                        className="absolute w-4 h-4 bg-white rounded-sm"
+                                                        style={{
+                                                            left: c.includes('w') ? -8 : undefined,
+                                                            right: c.includes('e') ? -8 : undefined,
+                                                            top: c.includes('n') ? -8 : undefined,
+                                                            bottom: c.includes('s') ? -8 : undefined,
+                                                            cursor: c === 'nw' || c === 'se' ? 'nwse-resize' : 'nesw-resize',
+                                                        }}
+                                                    />
+                                                ))}
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+                            </div>
+                            <div className="text-[11px] text-gray-500">
+                                Recadrage <b>non destructif</b> : ton fichier original n'est jamais modifié — reviens quand tu veux avec « Image complète ».
+                            </div>
+                        </div>
+                    ) : (
                     <div className="relative inline-block">
                         <img
+                            key={imgVersion}
                             src={imageSrc || ''}
                             alt={activePhoto.file_name}
                             className="max-w-full max-h-full object-contain"
@@ -645,6 +849,7 @@ export const DevelopView: React.FC = () => {
                             </div>
                         )}
                     </div>
+                    )}
                 </div>
 
                 {/* Barre de raccourcis en bas */}

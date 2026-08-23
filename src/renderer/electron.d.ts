@@ -89,6 +89,8 @@ interface ElectronAPI {
     getAvailableEditors: () => Promise<any[]>;
     openInEditor: (photoPath: string, photoId: string, editorId?: string) => Promise<any>;
     editLinkedCopy: (photoId: string) => Promise<{ success: boolean; copyPath?: string; copyPhotoId?: string; error?: string }>;
+    applyCrop: (photoId: string, crop: { x: number; y: number; w: number; h: number } | null) => Promise<{ success: boolean; photo?: any; error?: string }>;
+    getUncroppedPreview: (photoId: string) => Promise<string | null>;
     openInAffinityPhoto: (photoPath: string, photoId: string) => Promise<any>;
     linkEditedFile: (photoId: string) => Promise<{ editCopyPath: string; thumbnailPath: string | null } | null>;
 

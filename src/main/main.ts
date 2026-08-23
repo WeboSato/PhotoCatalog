@@ -1711,6 +1711,51 @@ const setupAffinityFileWatchers = () => {
     }
 };
 
+// Non-destructive crop: saved in develop_settings and baked into thumbnails
+// only. The original file is NEVER modified; clearing restores the full frame.
+ipcMain.handle('photos:applyCrop', async (_event, photoId: string, crop: { x: number; y: number; w: number; h: number } | null) => {
+    const photo = catalogDb.getPhoto(photoId);
+    if (!photo) return { success: false, error: 'Photo introuvable' };
+    let ds: any = {};
+    try { ds = photo.develop_settings ? JSON.parse(photo.develop_settings as any) : {}; } catch { /* fresh */ }
+    if (crop) ds.crop = crop; else delete ds.crop;
+    catalogDb.updatePhoto(photoId, { develop_settings: JSON.stringify(ds) } as any);
+
+    const t = await thumbnailService.generateThumbnails(photo.file_path, { forceRegenerate: true, crop: crop || null });
+    if (t) {
+        catalogDb.updatePhoto(photoId, {
+            thumbnail_path: t.thumbnailPath,
+            preview_path: t.previewPath,
+            blur_hash: t.blurHash || null,
+            width: t.width,
+            height: t.height
+        } as any);
+    }
+    mainWindow?.webContents.send('photos:refresh');
+    return { success: !!t, photo: catalogDb.getPhoto(photoId) };
+});
+
+// Full-frame preview for the crop editor (the stored preview is cropped).
+ipcMain.handle('photos:getUncroppedPreview', async (_event, photoId: string) => {
+    const photo = catalogDb.getPhoto(photoId);
+    if (!photo) return null;
+    try {
+        const dir = cardPreviewDir();
+        fs.mkdirSync(dir, { recursive: true });
+        const stat = await fs.promises.stat(photo.file_path);
+        const key = crypto.createHash('md5')
+            .update(`uncrop|${photo.file_path}|${Math.round(stat.mtimeMs)}`).digest('hex');
+        const out = path.join(dir, `${key}.webp`);
+        if (!fs.existsSync(out)) {
+            const ok = await thumbnailService.quickPreview(photo.file_path, out, 1800);
+            if (!ok) return null;
+        }
+        return out;
+    } catch {
+        return null;
+    }
+});
+
 // Lightroom-style round-trip: create a linked TIFF copy next to the original,
 // open it in Affinity, and let the watcher bring every Cmd+S back by itself.
 ipcMain.handle('editor:editLinkedCopy', async (_, photoId: string) => {

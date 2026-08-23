@@ -176,6 +176,20 @@ class CatalogDatabase {
             console.warn('[Database] Migration face_crop_path check failed:', e);
         }
 
+        // Migration: photos.develop_settings — the code has always read/written
+        // this COLUMN, but fresh databases never created it (only a separate,
+        // unused develop_settings TABLE existed). Old catalogs picked it up by
+        // accident; new ones crashed on the first develop save.
+        try {
+            const cols = this.db!.pragma('table_info(photos)') as { name: string }[];
+            if (!cols.some(col => col.name === 'develop_settings')) {
+                this.db!.exec('ALTER TABLE photos ADD COLUMN develop_settings TEXT');
+                console.log('[Database] Migration: Added develop_settings column');
+            }
+        } catch (e) {
+            console.warn('[Database] Migration develop_settings check failed:', e);
+        }
+
         // Migration: linked edit copies ("virtual copies" sent to Affinity) point
         // back at the photo they were made from.
         try {

@@ -224,7 +224,7 @@ class ThumbnailService {
      * RAW files use their embedded JPEG (milliseconds) with a sips fallback —
      * never the darktable pipeline, which can take a minute per file.
      */
-    async quickPreview(sourcePath: string, outPath: string): Promise<boolean> {
+    async quickPreview(sourcePath: string, outPath: string, maxDim: number = 320): Promise<boolean> {
         let tempJpeg: string | null = null;
         try {
             const ext = path.extname(sourcePath).toLowerCase();
@@ -243,7 +243,7 @@ class ThumbnailService {
             }
             await sharp(src)
                 .rotate() // honour EXIF orientation
-                .resize(320, 320, { fit: 'inside', withoutEnlargement: true })
+                .resize(maxDim, maxDim, { fit: 'inside', withoutEnlargement: true })
                 .webp({ quality: 72 })
                 .toFile(outPath);
             return true;
@@ -309,6 +309,22 @@ class ThumbnailService {
         return { copied, skipped };
     }
 
+    /** Crop stored by the Develop view for this source file, if any. */
+    private lookupStoredCrop(sourcePath: string): { x: number; y: number; w: number; h: number } | null {
+        try {
+            // Lazy require: keeps this usable in contexts where the DB isn't up.
+            const catalogDb = require('../database/Database').default;
+            const photo = catalogDb.getPhotoByPath?.(sourcePath);
+            if (!photo?.develop_settings) return null;
+            const ds = typeof photo.develop_settings === 'string'
+                ? JSON.parse(photo.develop_settings) : photo.develop_settings;
+            const c = ds?.crop;
+            return (c && c.w > 0 && c.h > 0 && c.w <= 1 && c.h <= 1) ? c : null;
+        } catch {
+            return null;
+        }
+    }
+
     private getHashedPath(filePath: string): string {
         const hash = crypto.createHash('md5').update(filePath).digest('hex');
 
@@ -324,7 +340,7 @@ class ThumbnailService {
 
     async generateThumbnails(
         sourcePath: string,
-        options: { forceRegenerate?: boolean; generatePreview?: boolean } = {}
+        options: { forceRegenerate?: boolean; generatePreview?: boolean; crop?: { x: number; y: number; w: number; h: number } | null } = {}
     ): Promise<ThumbnailResult | null> {
         const { forceRegenerate = false, generatePreview = true } = options;
 
@@ -577,6 +593,27 @@ class ThumbnailService {
             // Verify buffer is valid before processing
             if (!imageBuffer || imageBuffer.length === 0) {
                 throw new Error(`Empty image buffer generated for: ${sourcePath}`);
+            }
+
+            // Non-destructive crop (Lightroom-style): the crop saved by the
+            // Develop view is baked into every thumbnail size here — the source
+            // file itself is NEVER modified, and clearing the crop simply
+            // regenerates from the full frame. options.crop overrides; when the
+            // caller doesn't pass one, the stored crop applies automatically so
+            // every regeneration path (startup, rotation, watchers) keeps it.
+            const crop = options.crop !== undefined ? options.crop : this.lookupStoredCrop(sourcePath);
+            if (crop) {
+                // The rect is normalized against the ROTATED (as-displayed)
+                // image; orient first so x/y/w/h mean what the user saw.
+                const oriented = await sharp(imageBuffer).rotate().toBuffer({ resolveWithObject: true });
+                const W = oriented.info.width, H = oriented.info.height;
+                const left = Math.max(0, Math.min(W - 2, Math.round(crop.x * W)));
+                const top = Math.max(0, Math.min(H - 2, Math.round(crop.y * H)));
+                const width = Math.max(1, Math.min(W - left, Math.round(crop.w * W)));
+                const height = Math.max(1, Math.min(H - top, Math.round(crop.h * H)));
+                imageBuffer = await sharp(oriented.data).extract({ left, top, width, height }).toBuffer();
+                originalWidth = width;
+                originalHeight = height;
             }
 
             // Adaptive quality per size
