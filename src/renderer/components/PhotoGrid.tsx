@@ -460,10 +460,12 @@ const ContextMenu: React.FC<{
     onClose: () => void;
     onEditIn: (editorId: string) => void;
     onEditLinkedCopy: () => void;
+    onSyncCalibration: () => void;
+    syncTargetCount: number;
     onLinkEditedFile: () => void;
     onGoToFolder: () => void;
     onShowInFinder: () => void;
-}> = ({ x, y, photo, editors, onClose, onEditIn, onEditLinkedCopy, onLinkEditedFile, onGoToFolder, onShowInFinder }) => {
+}> = ({ x, y, photo, editors, onClose, onEditIn, onEditLinkedCopy, onSyncCalibration, syncTargetCount, onLinkEditedFile, onGoToFolder, onShowInFinder }) => {
     const menuRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -498,6 +500,13 @@ const ContextMenu: React.FC<{
                 title="Copie TIFF créée à côté de l'original, liée au catalogue. ⌘S dans Affinity met la grille à jour tout seul."
             >
                 🎨 Modifier une copie liée (Affinity)
+            </button>
+            <button
+                className="w-full px-3 py-2 text-left text-sm text-gray-100 hover:bg-white/15 hover:text-white"
+                onClick={onSyncCalibration}
+                title="Applique la calibration carte grise de CETTE photo à toutes les photos sélectionnées"
+            >
+                🎯 Synchroniser la calibration{syncTargetCount > 0 ? ` (${syncTargetCount} photo${syncTargetCount > 1 ? 's' : ''})` : '…'}
             </button>
             {editors.length > 0 ? (
                 <>
@@ -776,6 +785,44 @@ export const PhotoGrid: React.FC = React.memo(() => {
 
     // Toast for the linked-copy flow (success or error)
     const [linkedCopyToast, setLinkedCopyToast] = useState<{ show: boolean; error?: string; warning?: string }>({ show: false });
+
+    // Toast + handler for grid-side calibration sync: right-click the calibrated
+    // photo, its grey-card calibration lands on every other selected photo.
+    const [calibToast, setCalibToast] = useState<{ show: boolean; text: string }>({ show: false, text: '' });
+    const handleSyncCalibrationFromGrid = useCallback(async () => {
+        const photo = contextMenu.photo;
+        closeContextMenu();
+        if (!photo) return;
+        let hasWbSrc = false;
+        try {
+            const ds = photo.develop_settings
+                ? (typeof photo.develop_settings === 'string' ? JSON.parse(photo.develop_settings) : photo.develop_settings)
+                : null;
+            hasWbSrc = !!ds?.wb;
+        } catch { /* none */ }
+        if (!hasWbSrc) {
+            setCalibToast({ show: true, text: "⚠️ Cette photo n'a pas de calibration — calibre-la d'abord à la pipette 🎯 en mode Développement (double-clic)." });
+            setTimeout(() => setCalibToast({ show: false, text: '' }), 8000);
+            return;
+        }
+        const targets = [...selectedIds].filter(id => id !== photo.id);
+        if (targets.length === 0) {
+            setCalibToast({ show: true, text: 'Sélectionne d\'abord les photos à synchroniser (⌘-clic ou ⇧-clic), puis clic droit sur la photo calibrée.' });
+            setTimeout(() => setCalibToast({ show: false, text: '' }), 8000);
+            return;
+        }
+        setCalibToast({ show: true, text: `Synchronisation de la calibration… 0/${targets.length}` });
+        const unsub = window.api.onCalibrationProgress(pr =>
+            setCalibToast({ show: true, text: `Synchronisation de la calibration… ${pr.current}/${pr.total}` }));
+        try {
+            const r = await window.api.syncCalibration(photo.id, targets);
+            setCalibToast({ show: true, text: `🎯 Calibration synchronisée sur ${r.synced ?? 0} photo${(r.synced ?? 0) > 1 ? 's' : ''} ✓` });
+        } catch (e: any) {
+            setCalibToast({ show: true, text: '⚠️ ' + String(e?.message || e) });
+        }
+        unsub();
+        setTimeout(() => setCalibToast({ show: false, text: '' }), 7000);
+    }, [contextMenu.photo, closeContextMenu, selectedIds]);
 
     // Lightroom-style: create the linked TIFF copy and hand it to Affinity.
     const handleEditLinkedCopy = useCallback(async () => {
@@ -1264,6 +1311,8 @@ export const PhotoGrid: React.FC = React.memo(() => {
                     onClose={closeContextMenu}
                     onEditIn={handleEditIn}
                     onEditLinkedCopy={handleEditLinkedCopy}
+                    onSyncCalibration={handleSyncCalibrationFromGrid}
+                    syncTargetCount={contextMenu.photo ? [...selectedIds].filter(id => id !== contextMenu.photo!.id).length : 0}
                     onLinkEditedFile={handleLinkEditedFile}
                     onGoToFolder={handleGoToFolder}
                     onShowInFinder={handleShowInFinder}
@@ -1294,6 +1343,13 @@ export const PhotoGrid: React.FC = React.memo(() => {
                             ✕
                         </button>
                     </div>
+                </div>
+            )}
+
+            {/* Calibration sync toast */}
+            {calibToast.show && (
+                <div className="fixed bottom-32 left-1/2 -translate-x-1/2 z-50 glass-strong text-white px-5 py-3 rounded-lg shadow-2xl max-w-xl text-sm text-center">
+                    {calibToast.text}
                 </div>
             )}
 
