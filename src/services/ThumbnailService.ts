@@ -224,7 +224,7 @@ class ThumbnailService {
      * RAW files use their embedded JPEG (milliseconds) with a sips fallback —
      * never the darktable pipeline, which can take a minute per file.
      */
-    async quickPreview(sourcePath: string, outPath: string, maxDim: number = 320): Promise<boolean> {
+    async quickPreview(sourcePath: string, outPath: string, maxDim: number = 320, orientation?: number | null): Promise<boolean> {
         let tempJpeg: string | null = null;
         try {
             const ext = path.extname(sourcePath).toLowerCase();
@@ -234,6 +234,16 @@ class ThumbnailService {
                 const jpegStart = this.findJpegMarker(buffer);
                 if (jpegStart >= 0) {
                     src = buffer.slice(jpegStart);
+                    // A portrait shot must stay portrait: the RAW's embedded JPEG
+                    // usually has NO orientation tag (it lives in the RAW
+                    // container), so apply the known orientation ourselves.
+                    const knownO = orientation ?? this.lookupStoredOrientation(sourcePath);
+                    if (knownO && knownO !== 1) {
+                        const m = await sharp(src).metadata();
+                        if (!m.orientation || m.orientation === 1) {
+                            src = await this.applyExifOrientation(sharp(src), knownO).jpeg({ quality: 92 }).toBuffer();
+                        }
+                    }
                 } else {
                     tempJpeg = path.join(this.cacheDir, `temp_qp_${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`);
                     execSync(`sips -s format jpeg "${sourcePath}" --out "${tempJpeg}" 2>/dev/null`, { timeout: 15000 });
@@ -307,6 +317,32 @@ class ThumbnailService {
             if (copied > 0 && copied % 2000 === 0) safeLog(`[ThumbMirror] warming… ${copied}/${todo.length}`);
         }
         return { copied, skipped };
+    }
+
+    /** EXIF orientation recorded at import for this source file, if any. */
+    private lookupStoredOrientation(sourcePath: string): number | null {
+        try {
+            const catalogDb = require('../database/Database').default;
+            const photo = catalogDb.getPhotoByPath?.(sourcePath);
+            return photo?.orientation || null;
+        } catch {
+            return null;
+        }
+    }
+
+    /** Apply a numeric EXIF orientation manually (for images whose tag is lost,
+     *  e.g. the embedded JPEG inside a RAW: the tag lives in the RAW container). */
+    private applyExifOrientation(pipeline: sharp.Sharp, o: number): sharp.Sharp {
+        switch (o) {
+            case 2: return pipeline.flop();
+            case 3: return pipeline.rotate(180);
+            case 4: return pipeline.flip();
+            case 5: return pipeline.rotate(90).flop();
+            case 6: return pipeline.rotate(90);
+            case 7: return pipeline.rotate(270).flop();
+            case 8: return pipeline.rotate(270);
+            default: return pipeline;
+        }
     }
 
     /** Crop stored by the Develop view for this source file, if any. */
@@ -553,12 +589,24 @@ class ThumbnailService {
                         }
                     }
 
-                    // Method 3: Extract embedded JPEG
+                    // Method 3: Extract embedded JPEG. It usually lacks the RAW
+                    // container's orientation tag — reapply the known one so a
+                    // portrait photo never shows sideways (and crops line up).
                     if (!converted) {
                         const buffer = fs.readFileSync(sourcePath);
                         const jpegStart = this.findJpegMarker(buffer);
                         if (jpegStart >= 0) {
-                            fs.writeFileSync(tempJpeg, buffer.slice(jpegStart));
+                            let embedded: Buffer = buffer.slice(jpegStart);
+                            const knownO = this.lookupStoredOrientation(sourcePath);
+                            if (knownO && knownO !== 1) {
+                                try {
+                                    const m = await sharp(embedded).metadata();
+                                    if (!m.orientation || m.orientation === 1) {
+                                        embedded = await this.applyExifOrientation(sharp(embedded), knownO).jpeg({ quality: 95 }).toBuffer();
+                                    }
+                                } catch { /* keep as-is */ }
+                            }
+                            fs.writeFileSync(tempJpeg, embedded);
                             converted = true;
                         }
                     }

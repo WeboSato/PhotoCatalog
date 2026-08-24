@@ -747,15 +747,14 @@ export const PhotoGrid: React.FC = React.memo(() => {
         getStore().selectPhoto(photo.id, e.metaKey || e.ctrlKey, e.shiftKey);
     }, []);
 
-    // Handle double-click - save navigation state then switch to loupe
+    // Double-click opens the photo straight in Develop — the working view.
+    // (Loupe stays reachable via E; Escape/G comes back to the grid.)
     const handlePhotoDblClick = useCallback((photo: Photo) => {
-        console.log('[PhotoGrid] Double-click on photo:', photo.id, photo.file_name);
         const { setActivePhotoId, setViewMode, pushNavigation } = getStore();
         // Save current state before navigating
         pushNavigation();
         setActivePhotoId(photo.id);
-        setViewMode('loupe');
-        console.log('[PhotoGrid] Set viewMode to loupe');
+        setViewMode('develop');
     }, []);
 
     // Handle context menu (right-click)

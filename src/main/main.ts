@@ -1501,11 +1501,14 @@ ipcMain.handle('import:cardPreview', async (_event, filePath: string) => {
         const dir = cardPreviewDir();
         fs.mkdirSync(dir, { recursive: true });
         const stat = await fs.promises.stat(filePath);
+        // Orientation for RAW cards: the embedded preview has no tag, exif does.
+        let orientation = 0;
+        try { orientation = (await metadataService.extractMetadata(filePath))?.orientation || 0; } catch { /* best effort */ }
         const key = crypto.createHash('md5')
-            .update(`${filePath}|${stat.size}|${Math.round(stat.mtimeMs)}`).digest('hex');
+            .update(`${filePath}|${stat.size}|${Math.round(stat.mtimeMs)}|o${orientation}`).digest('hex');
         const out = path.join(dir, `${key}.webp`);
         if (!fs.existsSync(out)) {
-            const ok = await thumbnailService.quickPreview(filePath, out);
+            const ok = await thumbnailService.quickPreview(filePath, out, 320, orientation);
             if (!ok) return null;
         }
         return out;
@@ -1744,16 +1747,64 @@ ipcMain.handle('photos:getUncroppedPreview', async (_event, photoId: string) => 
         const dir = cardPreviewDir();
         fs.mkdirSync(dir, { recursive: true });
         const stat = await fs.promises.stat(photo.file_path);
+        const orientation = (photo as any).orientation || 0;
         const key = crypto.createHash('md5')
-            .update(`uncrop|${photo.file_path}|${Math.round(stat.mtimeMs)}`).digest('hex');
+            .update(`uncrop2|${photo.file_path}|${Math.round(stat.mtimeMs)}|o${orientation}`).digest('hex');
         const out = path.join(dir, `${key}.webp`);
         if (!fs.existsSync(out)) {
-            const ok = await thumbnailService.quickPreview(photo.file_path, out, 1800);
+            const ok = await thumbnailService.quickPreview(photo.file_path, out, 1800, orientation);
             if (!ok) return null;
         }
         return out;
     } catch {
         return null;
+    }
+});
+
+// Object removal (LaMa, 100% on-device). Non-destructive: the result lands on
+// the photo's linked copy (created if needed) — the original file never changes.
+ipcMain.handle('photos:removeObject', async (_event, photoId: string, maskPngBase64: string) => {
+    try {
+        const photo = catalogDb.getPhoto(photoId);
+        if (!photo) return { success: false, error: 'Photo introuvable' };
+
+        const inpaintService = (await import('../services/InpaintService')).default;
+        const ready = await inpaintService.ensureModel(pct =>
+            mainWindow?.webContents.send('inpaint:progress', { phase: 'download', pct }));
+        if (!ready) return { success: false, error: 'Modèle IA indisponible (téléchargement échoué)' };
+
+        // Target the linked copy: the photo itself if it IS one, else create/reuse.
+        let targetId = photoId;
+        let targetPath = photo.file_path;
+        if (!photo.edited_from_id) {
+            const created = await externalEditorService.createLinkedEditCopy(photoId);
+            if ('error' in created) return { success: false, error: created.error };
+            targetId = created.copyPhotoId;
+            targetPath = created.copyPath;
+        }
+
+        mainWindow?.webContents.send('inpaint:progress', { phase: 'inpaint' });
+        const ok = await inpaintService.inpaint(targetPath, Buffer.from(maskPngBase64, 'base64'), targetPath);
+        if (!ok) return { success: false, error: 'Aucune zone masquée détectée' };
+
+        // Fresh watcher baseline (it's our own write, not an external save),
+        // then refresh the copy's thumbnails so the result shows everywhere.
+        externalEditorService.registerLinkedEdit(targetPath, targetId);
+        const t = await thumbnailService.generateThumbnails(targetPath, { forceRegenerate: true });
+        if (t) {
+            catalogDb.updatePhoto(targetId, {
+                thumbnail_path: t.thumbnailPath,
+                preview_path: t.previewPath,
+                blur_hash: t.blurHash || null,
+                width: t.width,
+                height: t.height
+            } as any);
+        }
+        mainWindow?.webContents.send('photos:refresh');
+        return { success: true, targetPhotoId: targetId, appliedToCopy: targetId !== photoId };
+    } catch (e: any) {
+        console.error('[Inpaint] failed:', e);
+        return { success: false, error: String(e?.message || e) };
     }
 });
 

@@ -5,7 +5,7 @@ import {
     Sun, Contrast, Droplet, Thermometer, Palette,
     RotateCcw, ZoomIn, ZoomOut, ChevronLeft, ChevronDown, Eye, EyeOff,
     Undo, Redo, Save, Focus, Aperture, Circle, Layers,
-    Sliders, Check, Sparkles, Crop, X as XIcon
+    Sliders, Check, Sparkles, Crop, Eraser, X as XIcon
 } from 'lucide-react';
 
 // ==========================================
@@ -334,6 +334,11 @@ export const DevelopView: React.FC = () => {
     const [activePresetId, setActivePresetId] = useState<string | null>(null);
 
     const activePhoto = photos.find(p => p.id === activePhotoId);
+
+    // Every photo opens fitted to the view (zoom 100% of "fit"), never carrying
+    // the previous photo's zoom.
+    useEffect(() => { setZoom(1); }, [activePhotoId]);
+
     // Bumped after a crop is applied so the <img> remounts and revalidates the
     // regenerated (same-URL) preview instead of showing the stale cached one.
     const [imgVersion, setImgVersion] = useState(0);
@@ -438,6 +443,113 @@ export const DevelopView: React.FC = () => {
         }
         setApplyingCrop(false);
     }, [activePhoto, updatePhoto]);
+
+    // ---- Suppression d'objet (LaMa, 100 % local) --------------------------
+    // On peint un masque sur l'image ; le résultat va sur la COPIE LIÉE (créée
+    // au besoin) — l'original n'est jamais modifié.
+    const [removeMode, setRemoveMode] = useState(false);
+    const [brushSize, setBrushSize] = useState(40);
+    const [removing, setRemoving] = useState(false);
+    const [removeStatus, setRemoveStatus] = useState('');
+    const [removeNotice, setRemoveNotice] = useState('');
+    const [hasStrokes, setHasStrokes] = useState(false);
+    const paintCanvasRef = useRef<HTMLCanvasElement>(null);
+    const paintImgRef = useRef<HTMLImageElement>(null);
+    const paintingRef = useRef(false);
+
+    useEffect(() => {
+        if (!removeMode) return;
+        const unsub = window.api.onInpaintProgress((p) => {
+            if (p.phase === 'download') setRemoveStatus(`Téléchargement du modèle IA (une seule fois)… ${p.pct ?? 0}%`);
+            else if (p.phase === 'inpaint') setRemoveStatus('Suppression en cours (IA locale)…');
+        });
+        return unsub;
+    }, [removeMode]);
+
+    const initPaintCanvas = useCallback(() => {
+        const img = paintImgRef.current, canvas = paintCanvasRef.current;
+        if (!img || !canvas || !img.naturalWidth) return;
+        const scale = Math.min(1, 2048 / Math.max(img.naturalWidth, img.naturalHeight));
+        canvas.width = Math.round(img.naturalWidth * scale);
+        canvas.height = Math.round(img.naturalHeight * scale);
+        canvas.getContext('2d')!.clearRect(0, 0, canvas.width, canvas.height);
+        setHasStrokes(false);
+    }, []);
+
+    const paintPos = (e: React.PointerEvent) => {
+        const canvas = paintCanvasRef.current!;
+        const b = canvas.getBoundingClientRect();
+        return {
+            x: ((e.clientX - b.left) * canvas.width) / b.width,
+            y: ((e.clientY - b.top) * canvas.height) / b.height,
+            scale: canvas.width / b.width
+        };
+    };
+    const paintStart = (e: React.PointerEvent) => {
+        if (removing) return;
+        e.preventDefault();
+        paintingRef.current = true;
+        const ctx = paintCanvasRef.current!.getContext('2d')!;
+        const { x, y, scale } = paintPos(e);
+        ctx.strokeStyle = 'rgba(255,45,100,0.6)';
+        ctx.fillStyle = 'rgba(255,45,100,0.6)';
+        ctx.lineWidth = brushSize * scale;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        ctx.arc(x, y, (brushSize * scale) / 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        setHasStrokes(true);
+        (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    };
+    const paintMove = (e: React.PointerEvent) => {
+        if (!paintingRef.current) return;
+        const ctx = paintCanvasRef.current!.getContext('2d')!;
+        const { x, y } = paintPos(e);
+        ctx.lineTo(x, y);
+        ctx.stroke();
+    };
+    const paintEnd = () => { paintingRef.current = false; };
+
+    const submitRemove = async () => {
+        if (!activePhoto || !paintCanvasRef.current) return;
+        // Masque binaire : blanc où c'est peint, noir ailleurs.
+        const src = paintCanvasRef.current;
+        const m = document.createElement('canvas');
+        m.width = src.width; m.height = src.height;
+        const mctx = m.getContext('2d')!;
+        const px = src.getContext('2d')!.getImageData(0, 0, src.width, src.height);
+        const out = mctx.createImageData(m.width, m.height);
+        for (let i = 0; i < px.data.length; i += 4) {
+            const v = px.data[i + 3] > 10 ? 255 : 0;
+            out.data[i] = out.data[i + 1] = out.data[i + 2] = v;
+            out.data[i + 3] = 255;
+        }
+        mctx.putImageData(out, 0, 0);
+        const base64 = m.toDataURL('image/png').split(',')[1];
+
+        setRemoving(true);
+        setRemoveStatus('Suppression en cours (IA locale)…');
+        try {
+            const r = await window.api.removeObject(activePhoto.id, base64);
+            if (r.success) {
+                setRemoveMode(false);
+                setRemoveStatus('');
+                setImgVersion(v => v + 1);
+                setRemoveNotice(r.appliedToCopy
+                    ? 'Objet supprimé ✨ — le résultat est sur la carte « COPIE » à côté de l\'original (lui reste intact).'
+                    : 'Objet supprimé ✨');
+                setTimeout(() => setRemoveNotice(''), 9000);
+            } else {
+                setRemoveStatus(`⚠️ ${r.error || 'Échec'}`);
+            }
+        } catch (e: any) {
+            setRemoveStatus('⚠️ ' + String(e?.message || e));
+        }
+        setRemoving(false);
+    };
 
     // Charger les reglages existants quand la photo change
     useEffect(() => {
@@ -704,6 +816,11 @@ export const DevelopView: React.FC = () => {
                             className={`p-2 rounded ${cropMode ? 'bg-white/15 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}>
                             <Crop size={16} />
                         </button>
+                        <button onClick={() => { if (removeMode) { setRemoveMode(false); } else { setCropMode(false); setRemoveMode(true); setRemoveStatus(''); } }}
+                            title="Supprimer un objet (IA locale — résultat sur la copie liée, original intact)"
+                            className={`p-2 rounded ${removeMode ? 'bg-white/15 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}>
+                            <Eraser size={16} />
+                        </button>
                         <div className="w-px h-4 bg-gray-600 mx-1" />
                         <button onClick={() => setShowBefore(!showBefore)}
                             title="Avant/Apres (\\)"
@@ -733,7 +850,44 @@ export const DevelopView: React.FC = () => {
                 </div>
 
                 <div className="flex-1 flex items-center justify-center overflow-auto p-4">
-                    {cropMode ? (
+                    {removeMode ? (
+                        <div className="flex flex-col items-center gap-3 max-w-full max-h-full">
+                            <div className="flex items-center gap-3 text-xs">
+                                <span className="text-gray-400">Pinceau</span>
+                                <input type="range" min={10} max={120} value={brushSize}
+                                    onChange={e => setBrushSize(parseInt(e.target.value))} className="w-28" disabled={removing} />
+                                <button onClick={initPaintCanvas} disabled={removing}
+                                    className="px-2 py-1 rounded text-gray-300 hover:bg-white/10">Effacer le masque</button>
+                                <button onClick={submitRemove} disabled={removing || !hasStrokes}
+                                    className="px-3 py-1 rounded bg-green-600 hover:bg-green-700 text-white disabled:opacity-50">
+                                    {removing ? 'Suppression…' : "✨ Supprimer l'objet"}
+                                </button>
+                                <button onClick={() => setRemoveMode(false)} disabled={removing}
+                                    className="p-1.5 rounded text-gray-400 hover:text-white hover:bg-gray-700" title="Annuler">
+                                    <XIcon size={14} />
+                                </button>
+                            </div>
+                            <div className="relative inline-block select-none">
+                                <img ref={paintImgRef} src={imageSrc || ''} alt="" draggable={false}
+                                    onLoad={initPaintCanvas} className="max-w-full block"
+                                    style={{ maxHeight: 'calc(100vh - 240px)' }} />
+                                <canvas
+                                    ref={paintCanvasRef}
+                                    onPointerDown={paintStart}
+                                    onPointerMove={paintMove}
+                                    onPointerUp={paintEnd}
+                                    onPointerLeave={paintEnd}
+                                    className="absolute inset-0 w-full h-full"
+                                    style={{ cursor: 'crosshair', touchAction: 'none' }}
+                                />
+                            </div>
+                            <div className="text-[11px] text-gray-500 max-w-lg text-center">
+                                Peins sur ce que tu veux enlever, puis « Supprimer l'objet ». 100 % local (LaMa) —
+                                le résultat va sur la <b>copie liée</b>, ton original reste intact.
+                                {removeStatus && <div className="mt-1 text-gray-300">{removeStatus}</div>}
+                            </div>
+                        </div>
+                    ) : cropMode ? (
                         <div className="flex flex-col items-center gap-3 max-w-full max-h-full">
                             {/* Barre du recadrage */}
                             <div className="flex items-center gap-2 text-xs">
@@ -832,8 +986,12 @@ export const DevelopView: React.FC = () => {
                             key={imgVersion}
                             src={imageSrc || ''}
                             alt={activePhoto.file_name}
-                            className="max-w-full max-h-full object-contain"
+                            className="max-w-full object-contain"
                             style={{
+                                // Fit the whole photo by default: the wrapper's
+                                // height is content-driven so max-h-full never
+                                // bit — portrait photos overflowed and scrolled.
+                                maxHeight: 'calc(100vh - 170px)',
                                 filter: showBefore ? 'none' : generateFilter(),
                                 transform: `scale(${zoom})`,
                                 transformOrigin: 'center',
@@ -851,6 +1009,12 @@ export const DevelopView: React.FC = () => {
                     </div>
                     )}
                 </div>
+
+                {removeNotice && (
+                    <div className="absolute bottom-12 left-1/2 -translate-x-1/2 z-40 glass-strong text-white text-sm px-5 py-2.5 rounded-lg shadow-2xl">
+                        {removeNotice}
+                    </div>
+                )}
 
                 {/* Barre de raccourcis en bas */}
                 <div className="h-8 bg-gray-800/50 border-t border-gray-700 flex items-center justify-center gap-6 text-[10px] text-gray-500">
