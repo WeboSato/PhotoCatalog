@@ -94,6 +94,13 @@ contextBridge.exposeInMainWorld('api', {
     editLinkedCopy: (photoId: string) => ipcRenderer.invoke('editor:editLinkedCopy', photoId),
     applyCrop: (photoId: string, crop: { x: number; y: number; w: number; h: number } | null) => ipcRenderer.invoke('photos:applyCrop', photoId, crop),
     removeObject: (photoId: string, maskPngBase64: string) => ipcRenderer.invoke('photos:removeObject', photoId, maskPngBase64),
+    applyWhiteBalance: (photoId: string, wb: { r: number; b: number } | null) => ipcRenderer.invoke('photos:applyWhiteBalance', photoId, wb),
+    syncCalibration: (sourceId: string, targetIds: string[]) => ipcRenderer.invoke('photos:syncCalibration', sourceId, targetIds),
+    onCalibrationProgress: (callback: (p: { current: number; total: number }) => void) => {
+        const listener = (_e: any, p: any) => callback(p);
+        ipcRenderer.on('calibration:progress', listener);
+        return () => ipcRenderer.removeListener('calibration:progress', listener);
+    },
     onInpaintProgress: (callback: (p: { phase: string; pct?: number }) => void) => {
         const listener = (_e: any, p: any) => callback(p);
         ipcRenderer.on('inpaint:progress', listener);
@@ -364,6 +371,9 @@ export interface ElectronAPI {
     editLinkedCopy: (photoId: string) => Promise<{ success: boolean; copyPath?: string; copyPhotoId?: string; error?: string }>;
     applyCrop: (photoId: string, crop: { x: number; y: number; w: number; h: number } | null) => Promise<{ success: boolean; photo?: any; error?: string }>;
     removeObject: (photoId: string, maskPngBase64: string) => Promise<{ success: boolean; targetPhotoId?: string; appliedToCopy?: boolean; error?: string }>;
+    applyWhiteBalance: (photoId: string, wb: { r: number; b: number } | null) => Promise<{ success: boolean; photo?: any; error?: string }>;
+    syncCalibration: (sourceId: string, targetIds: string[]) => Promise<{ success: boolean; synced?: number; error?: string }>;
+    onCalibrationProgress: (callback: (p: { current: number; total: number }) => void) => () => void;
     onInpaintProgress: (callback: (p: { phase: string; pct?: number }) => void) => () => void;
     getUncroppedPreview: (photoId: string) => Promise<string | null>;
     openInAffinityPhoto: (photoPath: string, photoId: string) => Promise<any>;

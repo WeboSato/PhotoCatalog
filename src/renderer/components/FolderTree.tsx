@@ -72,7 +72,7 @@ const FolderTreeItem: React.FC<FolderTreeItemProps> = ({
     dragOverFolder
 }) => {
     const hasChildren = folder.children.length > 0;
-    const isActive = activeFolderId === folder.id;
+    const isActive = activeFolderId === folder.path;
     const isExpanded = expandedFolders.has(folder.id);
     const isDragOver = dragOverFolder === folder.id;
 
@@ -469,9 +469,11 @@ export const FolderTree: React.FC = () => {
     };
 
     const handleFolderSelect = async (folderId: string, folderPath: string) => {
-        setActiveFolderId(folderId);
+        // The PATH is the canonical folder identity app-wide: the grid scopes
+        // its rating/flag/colour filters with it (folder_path LIKE …).
+        setActiveFolderId(folderPath);
         // Persist active folder
-        localStorage.setItem(STORAGE_KEYS.activeFolderId, folderId);
+        localStorage.setItem(STORAGE_KEYS.activeFolderId, folderPath);
 
         try {
             const photos = await window.api.getPhotosInFolder(folderPath);
@@ -545,7 +547,7 @@ export const FolderTree: React.FC = () => {
                 // Refresh folders after sync
                 loadFolders();
                 // Refresh photos if this folder is selected
-                if (activeFolderId === contextMenu.folder.id) {
+                if (activeFolderId === contextMenu.folder.path) {
                     const photos = await window.api.getPhotosInFolder(contextMenu.folder.path);
                     setPhotos(photos);
                 }

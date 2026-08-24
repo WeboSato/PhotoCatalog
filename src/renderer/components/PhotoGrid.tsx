@@ -593,12 +593,10 @@ export const PhotoGrid: React.FC = React.memo(() => {
     const firstVisibleRow = virtualItems.length ? virtualItems[0].index : 0;
     const lastVisibleRow = virtualItems.length ? virtualItems[virtualItems.length - 1].index : 0;
 
-    // Load photos - folders load via FolderTree unless a filter has to be applied
+    // Load photos — the grid owns every mode, including folders, so the top
+    // filter bar works everywhere and clearing it restores the folder view.
     const loadPhotos = useCallback(async () => {
         const hasFilters = Object.keys(filters).length > 0;
-        // Without filters a folder's contents are FolderTree's job; with filters we
-        // load them here so rating/flag/colour filtering works inside a folder too.
-        if (activeFolderId && !hasFilters) return;
         if (loadingRef.current) return;
         loadingRef.current = true;
 
@@ -609,7 +607,9 @@ export const PhotoGrid: React.FC = React.memo(() => {
             const LOAD_ALL = 1_000_000;
             let data: Photo[];
             if (activeFolderId) {
-                data = await window.api.searchPhotos({ ...filters, folder_path: activeFolderId }, LOAD_ALL, 0);
+                data = hasFilters
+                    ? await window.api.searchPhotos({ ...filters, folder_path: activeFolderId }, LOAD_ALL, 0)
+                    : await window.api.getPhotosInFolder(activeFolderId);
             } else if (activeCollectionId) {
                 data = await window.api.getCollectionPhotos(activeCollectionId);
                 // searchPhotos can't scope to a collection, so filter its result here.
@@ -626,11 +626,9 @@ export const PhotoGrid: React.FC = React.memo(() => {
         loadingRef.current = false;
     }, [filters, activeCollectionId, activeFolderId, setPhotos]);
 
-    // Initial load - only when no folder is selected
+    // Initial load + whenever filters/folder/collection change
     useEffect(() => {
-        if (!activeFolderId) {
-            loadPhotos();
-        }
+        loadPhotos();
     }, [loadPhotos, activeFolderId]);
 
     // Listen for photos:refresh to update thumbnails during processing.
@@ -642,7 +640,7 @@ export const PhotoGrid: React.FC = React.memo(() => {
     const refreshTimerRef = useRef<number | null>(null);
     useEffect(() => {
         const REFRESH_INTERVAL = 2500;
-        const run = () => { if (!activeFolderId) loadPhotos(); };
+        const run = () => { loadPhotos(); };
         const unsubscribe = window.api.onPhotosRefresh(() => {
             const now = Date.now();
             const elapsed = now - lastRefreshRef.current;

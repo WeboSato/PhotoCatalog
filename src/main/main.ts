@@ -1761,6 +1761,64 @@ ipcMain.handle('photos:getUncroppedPreview', async (_event, photoId: string) => 
     }
 });
 
+// Grey-card white balance: {r,b} channel gains (green anchored at 1), stored in
+// develop_settings.wb and baked into thumbnails — original file never modified.
+ipcMain.handle('photos:applyWhiteBalance', async (_event, photoId: string, wb: { r: number; b: number } | null) => {
+    const photo = catalogDb.getPhoto(photoId);
+    if (!photo) return { success: false, error: 'Photo introuvable' };
+    let ds: any = {};
+    try { ds = photo.develop_settings ? JSON.parse(photo.develop_settings as any) : {}; } catch { /* fresh */ }
+    if (wb) ds.wb = wb; else delete ds.wb;
+    catalogDb.updatePhoto(photoId, { develop_settings: JSON.stringify(ds) } as any);
+
+    const t = await thumbnailService.generateThumbnails(photo.file_path, { forceRegenerate: true });
+    if (t) {
+        catalogDb.updatePhoto(photoId, {
+            thumbnail_path: t.thumbnailPath,
+            preview_path: t.previewPath,
+            blur_hash: t.blurHash || null
+        } as any);
+    }
+    mainWindow?.webContents.send('photos:refresh');
+    return { success: !!t, photo: catalogDb.getPhoto(photoId) };
+});
+
+// Sync the source photo's calibration to a set of photos (the selection) and
+// regenerate their thumbnails — Lightroom's "Sync settings", for the grey card.
+ipcMain.handle('photos:syncCalibration', async (_event, sourceId: string, targetIds: string[]) => {
+    const src = catalogDb.getPhoto(sourceId);
+    if (!src) return { success: false, error: 'Photo source introuvable' };
+    let srcDs: any = {};
+    try { srcDs = src.develop_settings ? JSON.parse(src.develop_settings as any) : {}; } catch { /* none */ }
+    const wb = srcDs.wb || null;
+
+    const ids = targetIds.filter(id => id !== sourceId);
+    let done = 0;
+    for (const id of ids) {
+        const p = catalogDb.getPhoto(id);
+        if (!p) continue;
+        let ds: any = {};
+        try { ds = p.develop_settings ? JSON.parse(p.develop_settings as any) : {}; } catch { /* fresh */ }
+        if (wb) ds.wb = wb; else delete ds.wb;
+        catalogDb.updatePhoto(id, { develop_settings: JSON.stringify(ds) } as any);
+        try {
+            const t = await thumbnailService.generateThumbnails(p.file_path, { forceRegenerate: true });
+            if (t) {
+                catalogDb.updatePhoto(id, {
+                    thumbnail_path: t.thumbnailPath,
+                    preview_path: t.previewPath,
+                    blur_hash: t.blurHash || null
+                } as any);
+            }
+        } catch { /* keep syncing the rest */ }
+        done++;
+        mainWindow?.webContents.send('calibration:progress', { current: done, total: ids.length });
+        if (done % 4 === 0) mainWindow?.webContents.send('photos:refresh');
+    }
+    mainWindow?.webContents.send('photos:refresh');
+    return { success: true, synced: done };
+});
+
 // Object removal (LaMa, 100% on-device). Non-destructive: the result lands on
 // the photo's linked copy (created if needed) — the original file never changes.
 ipcMain.handle('photos:removeObject', async (_event, photoId: string, maskPngBase64: string) => {

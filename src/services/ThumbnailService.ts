@@ -345,6 +345,21 @@ class ThumbnailService {
         }
     }
 
+    /** Grey-card white balance stored for this source file ({r,b} gains, g=1). */
+    private lookupStoredWb(sourcePath: string): { r: number; b: number } | null {
+        try {
+            const catalogDb = require('../database/Database').default;
+            const photo = catalogDb.getPhotoByPath?.(sourcePath);
+            if (!photo?.develop_settings) return null;
+            const ds = typeof photo.develop_settings === 'string'
+                ? JSON.parse(photo.develop_settings) : photo.develop_settings;
+            const w = ds?.wb;
+            return (w && w.r > 0.2 && w.r < 5 && w.b > 0.2 && w.b < 5) ? w : null;
+        } catch {
+            return null;
+        }
+    }
+
     /** Crop stored by the Develop view for this source file, if any. */
     private lookupStoredCrop(sourcePath: string): { x: number; y: number; w: number; h: number } | null {
         try {
@@ -376,7 +391,7 @@ class ThumbnailService {
 
     async generateThumbnails(
         sourcePath: string,
-        options: { forceRegenerate?: boolean; generatePreview?: boolean; crop?: { x: number; y: number; w: number; h: number } | null } = {}
+        options: { forceRegenerate?: boolean; generatePreview?: boolean; crop?: { x: number; y: number; w: number; h: number } | null; wb?: { r: number; b: number } | null } = {}
     ): Promise<ThumbnailResult | null> {
         const { forceRegenerate = false, generatePreview = true } = options;
 
@@ -662,6 +677,16 @@ class ThumbnailService {
                 imageBuffer = await sharp(oriented.data).extract({ left, top, width, height }).toBuffer();
                 originalWidth = width;
                 originalHeight = height;
+            }
+
+            // Grey-card white balance: per-channel gains (green anchored at 1)
+            // baked into every size — same non-destructive contract as the crop.
+            const wb = options.wb !== undefined ? options.wb : this.lookupStoredWb(sourcePath);
+            if (wb && (Math.abs(wb.r - 1) > 0.005 || Math.abs(wb.b - 1) > 0.005)) {
+                imageBuffer = await sharp(imageBuffer)
+                    .removeAlpha()
+                    .linear([wb.r, 1, wb.b], [0, 0, 0])
+                    .toBuffer();
             }
 
             // Adaptive quality per size

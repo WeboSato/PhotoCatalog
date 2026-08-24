@@ -5,7 +5,7 @@ import {
     Sun, Contrast, Droplet, Thermometer, Palette,
     RotateCcw, ZoomIn, ZoomOut, ChevronLeft, ChevronDown, Eye, EyeOff,
     Undo, Redo, Save, Focus, Aperture, Circle, Layers,
-    Sliders, Check, Sparkles, Crop, Eraser, X as XIcon
+    Sliders, Check, Sparkles, Crop, Eraser, Pipette, X as XIcon
 } from 'lucide-react';
 
 // ==========================================
@@ -537,9 +537,19 @@ export const DevelopView: React.FC = () => {
             if (r.success) {
                 setRemoveMode(false);
                 setRemoveStatus('');
+                // The result lives on the linked copy — SHOW it. Staying on the
+                // untouched original made a successful removal look like a no-op.
+                if (r.appliedToCopy && r.targetPhotoId) {
+                    const copyRow = await window.api.getPhoto(r.targetPhotoId);
+                    const st = useCatalogStore.getState();
+                    if (copyRow && !st.photos.find(ph => ph.id === copyRow.id)) {
+                        st.setPhotos([...st.photos, copyRow]);
+                    }
+                    st.setActivePhotoId(r.targetPhotoId);
+                }
                 setImgVersion(v => v + 1);
                 setRemoveNotice(r.appliedToCopy
-                    ? 'Objet supprimé ✨ — le résultat est sur la carte « COPIE » à côté de l\'original (lui reste intact).'
+                    ? 'Objet supprimé ✨ — tu regardes maintenant la copie liée ; ton original est intact juste à côté.'
                     : 'Objet supprimé ✨');
                 setTimeout(() => setRemoveNotice(''), 9000);
             } else {
@@ -550,6 +560,108 @@ export const DevelopView: React.FC = () => {
         }
         setRemoving(false);
     };
+
+    // ---- Calibration des couleurs à la carte grise ------------------------
+    // Clique sur une zone neutre : on calcule les gains R/B qui la rendent
+    // grise (vert ancré à 1), stockés dans develop_settings.wb et cuits dans
+    // les vignettes — non destructif, réversible, synchronisable en lot.
+    const [wbPickMode, setWbPickMode] = useState(false);
+    const [wbBusy, setWbBusy] = useState(false);
+    const [wbNotice, setWbNotice] = useState('');
+    const [syncBusy, setSyncBusy] = useState(false);
+    const [syncProgress, setSyncProgress] = useState<{ current: number; total: number } | null>(null);
+    const selectedIds = useCatalogStore((st) => st.selectedPhotoIds);
+    const hasWb = (() => {
+        try {
+            const ds = activePhoto?.develop_settings ? JSON.parse(activePhoto.develop_settings as any) : null;
+            return !!ds?.wb;
+        } catch { return false; }
+    })();
+
+    const handleWbPick = useCallback((e: React.MouseEvent<HTMLImageElement>) => {
+        if (!wbPickMode || !activePhoto || !imageSrc || wbBusy) return;
+        const rect = (e.currentTarget as HTMLImageElement).getBoundingClientRect();
+        const relX = (e.clientX - rect.left) / rect.width;
+        const relY = (e.clientY - rect.top) / rect.height;
+        setWbBusy(true);
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = async () => {
+            try {
+                const canvas = document.createElement('canvas');
+                canvas.width = img.width;
+                canvas.height = img.height;
+                const ctx = canvas.getContext('2d')!;
+                ctx.drawImage(img, 0, 0);
+                const cx = Math.round(relX * img.width), cy = Math.round(relY * img.height);
+                const S = 9;
+                const x0 = Math.max(0, cx - S), y0 = Math.max(0, cy - S);
+                const d = ctx.getImageData(x0, y0, Math.min(2 * S, img.width - x0), Math.min(2 * S, img.height - y0)).data;
+                let r = 0, g = 0, b = 0, n = 0;
+                for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; }
+                r /= n; g /= n; b /= n;
+                const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+                if (lum < 12 || lum > 248) {
+                    setWbNotice('⚠️ Zone trop sombre ou brûlée — clique sur ta carte grise (gris moyen).');
+                    setTimeout(() => setWbNotice(''), 6000);
+                    setWbBusy(false);
+                    return;
+                }
+                const gains = {
+                    r: Math.max(0.4, Math.min(2.5, g / Math.max(1, r))),
+                    b: Math.max(0.4, Math.min(2.5, g / Math.max(1, b)))
+                };
+                const res = await window.api.applyWhiteBalance(activePhoto.id, gains);
+                if (res?.photo) updatePhoto(activePhoto.id, res.photo);
+                setSettings(prev => ({ ...(prev as any), wb: gains } as any));
+                setWbPickMode(false);
+                setImgVersion(v => v + 1);
+                const others = [...selectedIds].filter(id => id !== activePhoto.id).length;
+                setWbNotice(`🎯 Calibré sur ta carte grise (R×${gains.r.toFixed(2)}, B×${gains.b.toFixed(2)})${others > 0 ? ` — clique « Sync » pour l'appliquer aux ${others} autres sélectionnées.` : ''}`);
+                setTimeout(() => setWbNotice(''), 10000);
+            } catch (err: any) {
+                setWbNotice('⚠️ ' + String(err?.message || err));
+            }
+            setWbBusy(false);
+        };
+        img.onerror = () => { setWbBusy(false); setWbNotice("⚠️ Impossible de lire l'image"); };
+        img.src = imageSrc;
+    }, [wbPickMode, activePhoto, imageSrc, wbBusy, selectedIds, updatePhoto]);
+
+    const handleResetWb = useCallback(async () => {
+        if (!activePhoto) return;
+        setWbBusy(true);
+        const res = await window.api.applyWhiteBalance(activePhoto.id, null);
+        if (res?.photo) updatePhoto(activePhoto.id, res.photo);
+        setSettings(prev => { const c: any = { ...(prev as any) }; delete c.wb; return c; });
+        setImgVersion(v => v + 1);
+        setWbBusy(false);
+        setWbNotice('Calibration réinitialisée — couleurs d\'origine restaurées.');
+        setTimeout(() => setWbNotice(''), 6000);
+    }, [activePhoto, updatePhoto]);
+
+    const handleSyncCalibration = useCallback(async () => {
+        if (!activePhoto) return;
+        const targets = [...selectedIds].filter(id => id !== activePhoto.id);
+        if (targets.length === 0) {
+            setWbNotice('Sélectionne d\'abord dans la grille les photos à synchroniser (⌘-clic), puis reviens ici.');
+            setTimeout(() => setWbNotice(''), 8000);
+            return;
+        }
+        setSyncBusy(true);
+        setSyncProgress({ current: 0, total: targets.length });
+        const unsub = window.api.onCalibrationProgress(pr => setSyncProgress(pr));
+        try {
+            const r = await window.api.syncCalibration(activePhoto.id, targets);
+            setWbNotice(`✓ Calibration synchronisée sur ${r.synced ?? 0} photo(s).`);
+            setTimeout(() => setWbNotice(''), 8000);
+        } catch (e: any) {
+            setWbNotice('⚠️ ' + String(e?.message || e));
+        }
+        unsub();
+        setSyncBusy(false);
+        setSyncProgress(null);
+    }, [activePhoto, selectedIds]);
 
     // Charger les reglages existants quand la photo change
     useEffect(() => {
@@ -816,11 +928,28 @@ export const DevelopView: React.FC = () => {
                             className={`p-2 rounded ${cropMode ? 'bg-white/15 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}>
                             <Crop size={16} />
                         </button>
-                        <button onClick={() => { if (removeMode) { setRemoveMode(false); } else { setCropMode(false); setRemoveMode(true); setRemoveStatus(''); } }}
+                        <button onClick={() => { if (removeMode) { setRemoveMode(false); } else { setCropMode(false); setWbPickMode(false); setRemoveMode(true); setRemoveStatus(''); } }}
                             title="Supprimer un objet (IA locale — résultat sur la copie liée, original intact)"
                             className={`p-2 rounded ${removeMode ? 'bg-white/15 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}>
                             <Eraser size={16} />
                         </button>
+                        <button onClick={() => { setCropMode(false); setRemoveMode(false); setWbPickMode(v => !v); }}
+                            title="Calibration des couleurs : active puis clique sur ta carte grise (non destructif, réversible)"
+                            className={`p-2 rounded ${wbPickMode ? 'bg-white/15 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}>
+                            <Pipette size={16} />
+                        </button>
+                        <button onClick={handleSyncCalibration} disabled={syncBusy || !hasWb}
+                            title="Synchroniser la calibration sur toutes les photos sélectionnées dans la grille"
+                            className={`px-2 py-1.5 rounded text-xs ${hasWb ? 'text-gray-300 hover:text-white hover:bg-gray-700' : 'text-gray-600'}`}>
+                            {syncBusy && syncProgress ? `Sync ${syncProgress.current}/${syncProgress.total}…` : 'Sync'}
+                        </button>
+                        {hasWb && (
+                            <button onClick={handleResetWb} disabled={wbBusy}
+                                title="Retirer la calibration (couleurs d'origine)"
+                                className="px-1.5 py-1.5 rounded text-[10px] text-gray-500 hover:text-white hover:bg-gray-700">
+                                réinit.
+                            </button>
+                        )}
                         <div className="w-px h-4 bg-gray-600 mx-1" />
                         <button onClick={() => setShowBefore(!showBefore)}
                             title="Avant/Apres (\\)"
@@ -986,8 +1115,10 @@ export const DevelopView: React.FC = () => {
                             key={imgVersion}
                             src={imageSrc || ''}
                             alt={activePhoto.file_name}
+                            onClick={handleWbPick}
                             className="max-w-full object-contain"
                             style={{
+                                cursor: wbPickMode ? 'crosshair' : undefined,
                                 // Fit the whole photo by default: the wrapper's
                                 // height is content-driven so max-h-full never
                                 // bit — portrait photos overflowed and scrolled.
@@ -1010,6 +1141,16 @@ export const DevelopView: React.FC = () => {
                     )}
                 </div>
 
+                {wbPickMode && (
+                    <div className="absolute top-16 left-1/2 -translate-x-1/2 z-40 glass-strong text-white text-sm px-5 py-2.5 rounded-lg shadow-2xl">
+                        🎯 Clique sur ta <b>carte grise</b> (ou une zone neutre) dans la photo{wbBusy ? ' — analyse…' : ''}
+                    </div>
+                )}
+                {wbNotice && (
+                    <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-40 glass-strong text-white text-sm px-5 py-2.5 rounded-lg shadow-2xl max-w-2xl text-center">
+                        {wbNotice}
+                    </div>
+                )}
                 {removeNotice && (
                     <div className="absolute bottom-12 left-1/2 -translate-x-1/2 z-40 glass-strong text-white text-sm px-5 py-2.5 rounded-lg shadow-2xl">
                         {removeNotice}
