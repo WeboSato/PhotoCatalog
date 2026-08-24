@@ -578,55 +578,90 @@ export const DevelopView: React.FC = () => {
         } catch { return false; }
     })();
 
-    const handleWbPick = useCallback((e: React.MouseEvent<HTMLImageElement>) => {
-        if (!wbPickMode || !activePhoto || !imageSrc || wbBusy) return;
-        const rect = (e.currentTarget as HTMLImageElement).getBoundingClientRect();
-        const relX = (e.clientX - rect.left) / rect.width;
-        const relY = (e.clientY - rect.top) / rect.height;
-        setWbBusy(true);
+    // Lecture RGB en direct sous la pipette (comme Lightroom) : l'image est
+    // dessinée une fois dans un canvas hors écran, échantillonné au survol.
+    const wbCanvasRef = useRef<{ ctx: CanvasRenderingContext2D; w: number; h: number } | null>(null);
+    const [wbHover, setWbHover] = useState<{ r: number; g: number; b: number; cx: number; cy: number } | null>(null);
+    // Aperçu INSTANTANÉ de la correction (feColorMatrix) pendant que les
+    // vignettes se régénèrent en arrière-plan — cliquer = voir corrigé.
+    const [wbTempGains, setWbTempGains] = useState<{ r: number; b: number } | null>(null);
+
+    useEffect(() => {
+        wbCanvasRef.current = null;
+        setWbHover(null);
+        if (!wbPickMode || !imageSrc) return;
+        let cancelled = false;
         const img = new Image();
         img.crossOrigin = 'anonymous';
-        img.onload = async () => {
-            try {
-                const canvas = document.createElement('canvas');
-                canvas.width = img.width;
-                canvas.height = img.height;
-                const ctx = canvas.getContext('2d')!;
-                ctx.drawImage(img, 0, 0);
-                const cx = Math.round(relX * img.width), cy = Math.round(relY * img.height);
-                const S = 9;
-                const x0 = Math.max(0, cx - S), y0 = Math.max(0, cy - S);
-                const d = ctx.getImageData(x0, y0, Math.min(2 * S, img.width - x0), Math.min(2 * S, img.height - y0)).data;
-                let r = 0, g = 0, b = 0, n = 0;
-                for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; }
-                r /= n; g /= n; b /= n;
-                const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-                if (lum < 12 || lum > 248) {
-                    setWbNotice('⚠️ Zone trop sombre ou brûlée — clique sur ta carte grise (gris moyen).');
-                    setTimeout(() => setWbNotice(''), 6000);
-                    setWbBusy(false);
-                    return;
-                }
-                const gains = {
-                    r: Math.max(0.4, Math.min(2.5, g / Math.max(1, r))),
-                    b: Math.max(0.4, Math.min(2.5, g / Math.max(1, b)))
-                };
-                const res = await window.api.applyWhiteBalance(activePhoto.id, gains);
-                if (res?.photo) updatePhoto(activePhoto.id, res.photo);
-                setSettings(prev => ({ ...(prev as any), wb: gains } as any));
-                setWbPickMode(false);
-                setImgVersion(v => v + 1);
-                const others = [...selectedIds].filter(id => id !== activePhoto.id).length;
-                setWbNotice(`🎯 Calibré sur ta carte grise (R×${gains.r.toFixed(2)}, B×${gains.b.toFixed(2)})${others > 0 ? ` — clique « Sync » pour l'appliquer aux ${others} autres sélectionnées.` : ''}`);
-                setTimeout(() => setWbNotice(''), 10000);
-            } catch (err: any) {
-                setWbNotice('⚠️ ' + String(err?.message || err));
-            }
-            setWbBusy(false);
+        img.onload = () => {
+            if (cancelled) return;
+            const canvas = document.createElement('canvas');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            if (!ctx) return;
+            ctx.drawImage(img, 0, 0);
+            wbCanvasRef.current = { ctx, w: img.width, h: img.height };
         };
-        img.onerror = () => { setWbBusy(false); setWbNotice("⚠️ Impossible de lire l'image"); };
         img.src = imageSrc;
-    }, [wbPickMode, activePhoto, imageSrc, wbBusy, selectedIds, updatePhoto]);
+        return () => { cancelled = true; };
+    }, [wbPickMode, imageSrc]);
+
+    const sampleAt = useCallback((relX: number, relY: number, radius: number) => {
+        const c = wbCanvasRef.current;
+        if (!c) return null;
+        const cx = Math.round(relX * c.w), cy = Math.round(relY * c.h);
+        const x0 = Math.max(0, cx - radius), y0 = Math.max(0, cy - radius);
+        const w = Math.min(2 * radius + 1, c.w - x0), h = Math.min(2 * radius + 1, c.h - y0);
+        if (w <= 0 || h <= 0) return null;
+        const d = c.ctx.getImageData(x0, y0, w, h).data;
+        let r = 0, g = 0, b = 0, n = 0;
+        for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; }
+        return { r: Math.round(r / n), g: Math.round(g / n), b: Math.round(b / n) };
+    }, []);
+
+    const handleWbHover = useCallback((e: React.MouseEvent<HTMLImageElement>) => {
+        if (!wbPickMode) return;
+        const rect = (e.currentTarget as HTMLImageElement).getBoundingClientRect();
+        const v = sampleAt((e.clientX - rect.left) / rect.width, (e.clientY - rect.top) / rect.height, 3);
+        setWbHover(v ? { ...v, cx: e.clientX, cy: e.clientY } : null);
+    }, [wbPickMode, sampleAt]);
+
+    const handleWbPick = useCallback(async (e: React.MouseEvent<HTMLImageElement>) => {
+        if (!wbPickMode || !activePhoto || wbBusy) return;
+        const rect = (e.currentTarget as HTMLImageElement).getBoundingClientRect();
+        const v = sampleAt((e.clientX - rect.left) / rect.width, (e.clientY - rect.top) / rect.height, 9);
+        if (!v) { setWbNotice("⚠️ Image en cours d'analyse — réessaie dans une seconde."); setTimeout(() => setWbNotice(''), 4000); return; }
+        const lum = 0.299 * v.r + 0.587 * v.g + 0.114 * v.b;
+        if (lum < 12 || lum > 248) {
+            setWbNotice('⚠️ Zone trop sombre ou brûlée — clique sur ta carte grise (gris moyen).');
+            setTimeout(() => setWbNotice(''), 6000);
+            return;
+        }
+        const gains = {
+            r: Math.max(0.4, Math.min(2.5, v.g / Math.max(1, v.r))),
+            b: Math.max(0.4, Math.min(2.5, v.g / Math.max(1, v.b)))
+        };
+        // Correction visible IMMÉDIATEMENT (feColorMatrix), pendant que les
+        // vignettes se régénèrent en arrière-plan avec la vraie correction.
+        setWbTempGains(gains);
+        setWbPickMode(false);
+        setWbHover(null);
+        setWbBusy(true);
+        try {
+            const res = await window.api.applyWhiteBalance(activePhoto.id, gains);
+            if (res?.photo) updatePhoto(activePhoto.id, res.photo);
+            setSettings(prev => ({ ...(prev as any), wb: gains } as any));
+            setImgVersion(ver => ver + 1);
+            const others = [...selectedIds].filter(id => id !== activePhoto.id).length;
+            setWbNotice(`🎯 Corrigé — R ${v.r} · G ${v.g} · B ${v.b} → neutre (R×${gains.r.toFixed(2)}, B×${gains.b.toFixed(2)})${others > 0 ? ` — « Sync » pour les ${others} autres sélectionnées.` : ''}`);
+            setTimeout(() => setWbNotice(''), 10000);
+        } catch (err: any) {
+            setWbTempGains(null);
+            setWbNotice('⚠️ ' + String(err?.message || err));
+        }
+        setWbBusy(false);
+    }, [wbPickMode, activePhoto, wbBusy, selectedIds, updatePhoto, sampleAt]);
 
     const handleResetWb = useCallback(async () => {
         if (!activePhoto) return;
@@ -1116,6 +1151,9 @@ export const DevelopView: React.FC = () => {
                             src={imageSrc || ''}
                             alt={activePhoto.file_name}
                             onClick={handleWbPick}
+                            onMouseMove={handleWbHover}
+                            onMouseLeave={() => setWbHover(null)}
+                            onLoad={() => setWbTempGains(null)}
                             className="max-w-full object-contain"
                             style={{
                                 cursor: wbPickMode ? 'crosshair' : undefined,
@@ -1123,7 +1161,7 @@ export const DevelopView: React.FC = () => {
                                 // height is content-driven so max-h-full never
                                 // bit — portrait photos overflowed and scrolled.
                                 maxHeight: 'calc(100vh - 170px)',
-                                filter: showBefore ? 'none' : generateFilter(),
+                                filter: `${wbTempGains ? 'url(#wb-temp-filter) ' : ''}${showBefore ? '' : generateFilter()}`.trim() || 'none',
                                 transform: `scale(${zoom})`,
                                 transformOrigin: 'center',
                                 transition: 'filter 0.1s ease'
@@ -1145,6 +1183,34 @@ export const DevelopView: React.FC = () => {
                     <div className="absolute top-16 left-1/2 -translate-x-1/2 z-40 glass-strong text-white text-sm px-5 py-2.5 rounded-lg shadow-2xl">
                         🎯 Clique sur ta <b>carte grise</b> (ou une zone neutre) dans la photo{wbBusy ? ' — analyse…' : ''}
                     </div>
+                )}
+                {wbPickMode && wbHover && (
+                    <div
+                        className="fixed z-50 pointer-events-none glass-strong rounded-lg shadow-2xl px-3 py-2 text-xs font-mono"
+                        style={{ left: wbHover.cx + 18, top: wbHover.cy + 18 }}
+                    >
+                        <div className="flex items-center gap-2">
+                            <span
+                                className="inline-block w-6 h-6 rounded border border-white/30"
+                                style={{ backgroundColor: `rgb(${wbHover.r},${wbHover.g},${wbHover.b})` }}
+                            />
+                            <div className="leading-tight">
+                                <div><span className="text-red-400">R {wbHover.r}</span>  <span className="text-green-400">G {wbHover.g}</span>  <span className="text-blue-400">B {wbHover.b}</span></div>
+                                <div className="text-gray-400">
+                                    {Math.abs(wbHover.r - wbHover.g) < 6 && Math.abs(wbHover.b - wbHover.g) < 6
+                                        ? 'déjà neutre ✓'
+                                        : `écart R${wbHover.r - wbHover.g > 0 ? '+' : ''}${wbHover.r - wbHover.g} B${wbHover.b - wbHover.g > 0 ? '+' : ''}${wbHover.b - wbHover.g}`}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+                {wbTempGains && (
+                    <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden>
+                        <filter id="wb-temp-filter" colorInterpolationFilters="sRGB">
+                            <feColorMatrix type="matrix" values={`${wbTempGains.r} 0 0 0 0  0 1 0 0 0  0 0 ${wbTempGains.b} 0 0  0 0 0 1 0`} />
+                        </filter>
+                    </svg>
                 )}
                 {wbNotice && (
                     <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-40 glass-strong text-white text-sm px-5 py-2.5 rounded-lg shadow-2xl max-w-2xl text-center">
