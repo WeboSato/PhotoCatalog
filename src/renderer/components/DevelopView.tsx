@@ -638,13 +638,25 @@ export const DevelopView: React.FC = () => {
             setTimeout(() => setWbNotice(''), 6000);
             return;
         }
-        const gains = {
-            r: Math.max(0.4, Math.min(2.5, v.g / Math.max(1, v.r))),
-            b: Math.max(0.4, Math.min(2.5, v.g / Math.max(1, v.b)))
+        const inc = {
+            r: v.g / Math.max(1, v.r),
+            b: v.g / Math.max(1, v.b)
         };
-        // Correction visible IMMÉDIATEMENT (feColorMatrix), pendant que les
-        // vignettes se régénèrent en arrière-plan avec la vraie correction.
-        setWbTempGains(gains);
+        // Le preview affiché contient DÉJÀ la calibration en cours : un nouveau
+        // clic mesure le résidu. On compose donc ancien × nouveau, sinon la 2e
+        // calibration annulerait la 1re.
+        let prevWb: { r: number; b: number } | null = null;
+        try {
+            const ds = activePhoto.develop_settings ? JSON.parse(activePhoto.develop_settings as any) : null;
+            if (ds?.wb) prevWb = ds.wb;
+        } catch { /* none */ }
+        const gains = {
+            r: Math.max(0.4, Math.min(2.5, (prevWb?.r ?? 1) * inc.r)),
+            b: Math.max(0.4, Math.min(2.5, (prevWb?.b ?? 1) * inc.b))
+        };
+        // Correction visible IMMÉDIATEMENT (feColorMatrix) : seulement le
+        // résidu, puisque l'image affichée porte déjà l'ancienne correction.
+        setWbTempGains(inc);
         setWbPickMode(false);
         setWbHover(null);
         setWbBusy(true);
@@ -654,7 +666,8 @@ export const DevelopView: React.FC = () => {
             setSettings(prev => ({ ...(prev as any), wb: gains } as any));
             setImgVersion(ver => ver + 1);
             const others = [...selectedIds].filter(id => id !== activePhoto.id).length;
-            setWbNotice(`🎯 Corrigé — R ${v.r} · G ${v.g} · B ${v.b} → neutre (R×${gains.r.toFixed(2)}, B×${gains.b.toFixed(2)})${others > 0 ? ` — « Sync » pour les ${others} autres sélectionnées.` : ''}`);
+            const dmax = Math.max(Math.abs(v.r - v.g), Math.abs(v.b - v.g));
+            setWbNotice(`${dmax < 3 ? '🎯 Zone déjà neutre — micro-ajustement appliqué' : '🎯 Corrigé'} — R ${v.r} · G ${v.g} · B ${v.b} → neutre (total R×${gains.r.toFixed(2)}, B×${gains.b.toFixed(2)})${others > 0 ? ` — « Sync » pour les ${others} autres sélectionnées.` : ''}`);
             setTimeout(() => setWbNotice(''), 10000);
         } catch (err: any) {
             setWbTempGains(null);
@@ -1197,10 +1210,15 @@ export const DevelopView: React.FC = () => {
                             <div className="leading-tight">
                                 <div><span className="text-red-400">R {wbHover.r}</span>  <span className="text-green-400">G {wbHover.g}</span>  <span className="text-blue-400">B {wbHover.b}</span></div>
                                 <div className="text-gray-400">
-                                    {Math.abs(wbHover.r - wbHover.g) < 6 && Math.abs(wbHover.b - wbHover.g) < 6
-                                        ? 'déjà neutre ✓'
-                                        : `écart R${wbHover.r - wbHover.g > 0 ? '+' : ''}${wbHover.r - wbHover.g} B${wbHover.b - wbHover.g > 0 ? '+' : ''}${wbHover.b - wbHover.g}`}
+                                    {(() => {
+                                        const dr = wbHover.r - wbHover.g, db = wbHover.b - wbHover.g;
+                                        const dmax = Math.max(Math.abs(dr), Math.abs(db));
+                                        if (dmax < 3) return 'neutre ✓ (clic = micro-ajustement)';
+                                        if (dmax < 8) return `presque neutre — R${dr > 0 ? '+' : ''}${dr} B${db > 0 ? '+' : ''}${db}`;
+                                        return `écart R${dr > 0 ? '+' : ''}${dr} B${db > 0 ? '+' : ''}${db} — clique pour corriger`;
+                                    })()}
                                 </div>
+                                {hasWb && <div className="text-amber-400/80 text-[10px]">calibration déjà active — le clic affine</div>}
                             </div>
                         </div>
                     </div>
