@@ -548,10 +548,13 @@ export const DevelopView: React.FC = () => {
                     st.setActivePhotoId(r.targetPhotoId);
                 }
                 setImgVersion(v => v + 1);
-                setRemoveNotice(r.appliedToCopy
+                const staleNote = (r as any).affinityWarning
+                    ? " ⚠️ Ce fichier est aussi ouvert dans Affinity : ferme-le là-bas (sans enregistrer) puis rouvre-le via 🎨, sinon un ⌘S depuis Affinity écraserait cette retouche."
+                    : '';
+                setRemoveNotice((r.appliedToCopy
                     ? 'Objet supprimé ✨ — tu regardes maintenant la copie liée ; ton original est intact juste à côté.'
-                    : 'Objet supprimé ✨');
-                setTimeout(() => setRemoveNotice(''), 9000);
+                    : 'Objet supprimé ✨') + staleNote);
+                setTimeout(() => setRemoveNotice(''), staleNote ? 15000 : 9000);
             } else {
                 setRemoveStatus(`⚠️ ${r.error || 'Échec'}`);
             }

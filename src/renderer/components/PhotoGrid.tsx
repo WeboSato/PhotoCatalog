@@ -775,7 +775,7 @@ export const PhotoGrid: React.FC = React.memo(() => {
     const [savePathNotification, setSavePathNotification] = useState<{ show: boolean; path: string }>({ show: false, path: '' });
 
     // Toast for the linked-copy flow (success or error)
-    const [linkedCopyToast, setLinkedCopyToast] = useState<{ show: boolean; error?: string }>({ show: false });
+    const [linkedCopyToast, setLinkedCopyToast] = useState<{ show: boolean; error?: string; warning?: string }>({ show: false });
 
     // Lightroom-style: create the linked TIFF copy and hand it to Affinity.
     const handleEditLinkedCopy = useCallback(async () => {
@@ -783,7 +783,13 @@ export const PhotoGrid: React.FC = React.memo(() => {
         closeContextMenu();
         try {
             const r = await window.api.editLinkedCopy(contextMenu.photo.id);
-            setLinkedCopyToast({ show: true, error: r.success ? undefined : (r.error || 'Échec') });
+            setLinkedCopyToast({
+                show: true,
+                error: r.success ? undefined : (r.error || 'Échec'),
+                warning: (r as any).staleWarning
+                    ? "Affinity avait déjà ce document ouvert : s'il montre une ancienne version, ferme son onglet là-bas puis relance d'ici."
+                    : undefined
+            });
         } catch (e: any) {
             setLinkedCopyToast({ show: true, error: String(e?.message || e) });
         }
@@ -1296,7 +1302,8 @@ export const PhotoGrid: React.FC = React.memo(() => {
                 <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 glass-strong text-white px-5 py-3 rounded-lg shadow-2xl max-w-xl text-sm">
                     {linkedCopyToast.error
                         ? <>⚠️ Copie liée impossible : {linkedCopyToast.error}</>
-                        : <>🎨 Copie liée envoyée à Affinity — fais simplement <b>⌘S</b> là-bas : la photo se met à jour ici toute seule.</>}
+                        : <>🎨 Copie liée envoyée à Affinity — fais simplement <b>⌘S</b> là-bas : la photo se met à jour ici toute seule.
+                            {linkedCopyToast.warning && <span className="block mt-1 text-amber-300 text-xs">⚠️ {linkedCopyToast.warning}</span>}</>}
                 </div>
             )}
 

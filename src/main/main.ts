@@ -1859,7 +1859,14 @@ ipcMain.handle('photos:removeObject', async (_event, photoId: string, maskPngBas
             } as any);
         }
         mainWindow?.webContents.send('photos:refresh');
-        return { success: true, targetPhotoId: targetId, appliedToCopy: targetId !== photoId };
+        return {
+            success: true,
+            targetPhotoId: targetId,
+            appliedToCopy: targetId !== photoId,
+            // The retouched file was previously handed to Affinity: its open
+            // document there is now stale and a Cmd+S would erase this retouch.
+            affinityWarning: externalEditorService.wasHandedToAffinity(targetPath)
+        };
     } catch (e: any) {
         console.error('[Inpaint] failed:', e);
         return { success: false, error: String(e?.message || e) };
@@ -1872,13 +1879,14 @@ ipcMain.handle('editor:editLinkedCopy', async (_, photoId: string) => {
     const created = await externalEditorService.createLinkedEditCopy(photoId);
     if ('error' in created) return { success: false, error: created.error };
 
-    const opened = await externalEditorService.openInEditor(created.copyPath, created.copyPhotoId, undefined, false);
+    const opened = await externalEditorService.openLinkedCopyInAffinity(created.copyPath, created.copyPhotoId);
     mainWindow?.webContents.send('photos:refresh');
     return {
-        success: !!opened,
+        success: opened.opened,
         copyPath: created.copyPath,
         copyPhotoId: created.copyPhotoId,
-        error: opened ? undefined : 'Affinity Photo introuvable'
+        staleWarning: opened.staleRisk,
+        error: opened.opened ? undefined : 'Affinity Photo introuvable'
     };
 });
 

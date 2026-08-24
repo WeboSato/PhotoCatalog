@@ -411,6 +411,49 @@ class ExternalEditorService {
         pending?: { mtimeMs: number; size: number };
     }>();
 
+    // Files we've handed to Affinity this session (path → mtime at last open).
+    // Affinity keeps documents in memory: if the file changes on disk afterwards
+    // (an AI retouch lands in it), Affinity still shows — and could Cmd+S over —
+    // the OLD version. We defuse that on the next handoff.
+    private affinityHandoffs = new Map<string, number>();
+
+    wasHandedToAffinity(filePath: string): boolean {
+        return this.affinityHandoffs.has(filePath);
+    }
+
+    /**
+     * Open a linked copy in Affinity, defusing the stale-document trap: if the
+     * file changed since we last handed it over, ask Affinity to close its
+     * in-memory version first so the reopen shows the current pixels. Best
+     * effort — Affinity's AppleScript support is thin; when the close fails we
+     * return staleRisk so the UI can tell the user what to do.
+     */
+    async openLinkedCopyInAffinity(copyPath: string, copyPhotoId: string): Promise<{ opened: boolean; staleRisk: boolean }> {
+        let staleRisk = false;
+        try {
+            const st = fs.statSync(copyPath);
+            const last = this.affinityHandoffs.get(copyPath);
+            if (last !== undefined && st.mtimeMs > last + 500) {
+                staleRisk = true;
+                const editor = this.getAvailableEditors().find(e => e.id === 'affinity-photo');
+                if (editor?.path?.endsWith('.app')) {
+                    const appName = path.basename(editor.path, '.app');
+                    const docName = path.basename(copyPath).replace(/"/g, '');
+                    try {
+                        // No "saving no": if the user has unsaved work there,
+                        // Affinity asks them instead of silently discarding it.
+                        execSync(`osascript -e 'tell application "${appName}" to close (every document whose name is "${docName}")' 2>/dev/null`, { timeout: 4000 });
+                        staleRisk = false;
+                    } catch { /* Affinity ignored the request — warn via staleRisk */ }
+                }
+            }
+        } catch { /* stat failed — openInEditor will surface the real error */ }
+
+        const result = await this.openInEditor(copyPath, copyPhotoId, undefined, false);
+        try { this.affinityHandoffs.set(copyPath, fs.statSync(copyPath).mtimeMs); } catch { /* keep old entry */ }
+        return { opened: !!result, staleRisk };
+    }
+
     /** Create (or reuse) the linked TIFF copy for a photo and register it. */
     async createLinkedEditCopy(photoId: string): Promise<{ copyPath: string; copyPhotoId: string } | { error: string }> {
         const original = catalogDb.getPhoto(photoId);
