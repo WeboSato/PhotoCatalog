@@ -245,22 +245,46 @@ interface CatalogState {
     resetDevelopmentSettings: () => void;
 }
 
+// ---- Session restore --------------------------------------------------------
+// Reopen exactly where the user left off (folder/collection, view, photo).
+// Read synchronously so the very first render — and PhotoGrid's mount-time
+// scroll-to-photo — start from the saved place.
+const SESSION_KEY = 'photocatalog_session_v1';
+const VIEW_MODES: ViewMode[] = ['grid', 'loupe', 'survey', 'map', 'develop', 'aiface', 'album'];
+const loadSavedSession = (): { viewMode: ViewMode; activePhotoId: string | null; activeFolderId: string | null; activeCollectionId: string | null } => {
+    const fallback = { viewMode: 'grid' as ViewMode, activePhotoId: null, activeFolderId: null, activeCollectionId: null };
+    try {
+        const raw = localStorage.getItem(SESSION_KEY);
+        if (!raw) return fallback;
+        const sess = JSON.parse(raw);
+        return {
+            viewMode: VIEW_MODES.includes(sess.viewMode) ? sess.viewMode : 'grid',
+            activePhotoId: typeof sess.activePhotoId === 'string' ? sess.activePhotoId : null,
+            activeFolderId: typeof sess.activeFolderId === 'string' ? sess.activeFolderId : null,
+            activeCollectionId: typeof sess.activeCollectionId === 'string' ? sess.activeCollectionId : null,
+        };
+    } catch {
+        return fallback;
+    }
+};
+const savedSession = loadSavedSession();
+
 export const useCatalogStore = create<CatalogState>()(
   subscribeWithSelector((set, get) => ({
     // Initial state
     photos: [],
-    selectedPhotoIds: new Set(),
-    activePhotoId: null,
+    selectedPhotoIds: savedSession.activePhotoId ? new Set([savedSession.activePhotoId]) : new Set(),
+    activePhotoId: savedSession.activePhotoId,
     totalPhotoCount: 0,
     isLoading: false,
 
     collections: [],
     keywords: [],
     folders: [],
-    activeCollectionId: null,
-    activeFolderId: null,
+    activeCollectionId: savedSession.activeCollectionId,
+    activeFolderId: savedSession.activeFolderId,
 
-    viewMode: 'grid',
+    viewMode: savedSession.viewMode,
     gridSize: 200,
     sortBy: 'date_taken',
     sortOrder: 'desc',
@@ -733,3 +757,20 @@ export const useCatalogStore = create<CatalogState>()(
         }
     }
 })));
+
+
+// Persist the working position on every relevant change, so closing the app
+// mid-session costs nothing: folder/collection, view mode and active photo.
+let lastPersistedSession = '';
+useCatalogStore.subscribe((s) => {
+    const sess = JSON.stringify({
+        viewMode: s.viewMode,
+        activePhotoId: s.activePhotoId,
+        activeFolderId: s.activeFolderId,
+        activeCollectionId: s.activeCollectionId,
+    });
+    if (sess !== lastPersistedSession) {
+        lastPersistedSession = sess;
+        try { localStorage.setItem(SESSION_KEY, sess); } catch { /* storage full — skip */ }
+    }
+});

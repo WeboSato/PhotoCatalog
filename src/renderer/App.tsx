@@ -60,6 +60,23 @@ const App: React.FC = () => {
                 setKeywords(keywordsData);
                 setFolders(foldersData);
                 setTotalPhotoCount(count);
+
+                // Session restore: when the app reopens straight into Develop or
+                // Loupe (saved view), PhotoGrid isn't mounted to load photos —
+                // load the same working set here so the restored photo appears.
+                const st = useCatalogStore.getState();
+                if (st.photos.length === 0 && st.viewMode !== 'grid' && st.viewMode !== 'survey') {
+                    try {
+                        const data = st.activeFolderId
+                            ? await window.api.getPhotosInFolder(st.activeFolderId)
+                            : st.activeCollectionId
+                                ? await window.api.getCollectionPhotos(st.activeCollectionId)
+                                : await window.api.getPhotos(1_000_000, 0);
+                        st.setPhotos(data);
+                    } catch (e) {
+                        console.error('[App] Session restore photo load failed:', e);
+                    }
+                }
             } catch (error) {
                 console.error('Failed to load data:', error);
             } finally {
