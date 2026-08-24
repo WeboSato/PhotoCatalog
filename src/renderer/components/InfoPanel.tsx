@@ -510,8 +510,10 @@ export const InfoPanel: React.FC = React.memo(() => {
 
             {/* Scrollable content */}
             <div className="flex-1 overflow-y-auto">
-                {/* Development panels - only in loupe mode */}
-                {isLoupeMode && (
+                {/* Development panels — loupe only. In Develop mode the left
+                    panel already has the full toolset; the right side keeps
+                    just the metadata, like Lightroom. */}
+                {viewMode === 'loupe' && (
                     <>
                         {/* Histogram */}
                         <Section title="Histogram" defaultOpen={true}>

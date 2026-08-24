@@ -1177,10 +1177,14 @@ export const DevelopView: React.FC = () => {
                 </div>
 
                 {/* Histogramme */}
-                <Histogram imageSrc={imageSrc} />
+                <DevelopSection title="Histogramme" defaultOpen={true}>
+                    <Histogram imageSrc={imageSrc} />
+                </DevelopSection>
 
                 {/* Presets */}
-                <PresetsPanel onApply={applyPreset} activePresetId={activePresetId} />
+                <DevelopSection title="Presets" defaultOpen={false}>
+                    <PresetsPanel onApply={applyPreset} activePresetId={activePresetId} />
+                </DevelopSection>
 
                 <DevelopSection title="Basic">
                     <DevelopSlider label="Exposition" value={settings.exposure} min={-5} max={5} step={0.1} onChange={(v) => updateSetting('exposure', v)} icon={<Sun size={12} />} />
