@@ -1495,6 +1495,48 @@ ipcMain.handle('import:scanCard', async (_event, dirPath: string) => {
     return files.map(f => ({ ...f, alreadyImported: known.has(`${f.name}|${f.size}`) }));
 });
 
+// Lightroom-style "Synchronize Folder": analyze, then apply the user's choices.
+ipcMain.handle('sync:analyze', async (_event, rootPath: string) => {
+    return importService.analyzeFolderSync(rootPath);
+});
+
+ipcMain.handle('sync:run', async (_event, opts: {
+    importPaths: string[];        // new files (+ duplicates if the user opted in)
+    removeMissingIds: string[];   // catalog rows whose files are gone
+}) => {
+    const summary = { imported: 0, errors: 0, removed: 0 };
+    if (opts.removeMissingIds?.length) {
+        catalogDb.deletePhotos(opts.removeMissingIds);
+        summary.removed = opts.removeMissingIds.length;
+    }
+    let importedIds: string[] = [];
+    if (opts.importPaths?.length) {
+        // In place, no dedup re-filtering (the analysis already decided), and
+        // WITHOUT thumbnails inline: the register pass stays fast; previews are
+        // built right after in the background, Lightroom-style.
+        const r = await importService.importFiles(opts.importPaths, {
+            skipDuplicates: false, generateThumbnails: false, extractMetadata: true
+        }, (progress: ImportProgress) => mainWindow?.webContents.send('import:progress', progress));
+        importedIds = r.importedIds;
+        summary.imported = r.importedIds.length;
+        summary.errors = r.errors.length;
+    }
+    mainWindow?.webContents.send('photos:refresh');
+
+    if (importedIds.length) {
+        setTimeout(() => {
+            importService.generateThumbnailsForPhotos(importedIds, (current, total) => {
+                mainWindow?.webContents.send('thumbnails:progress', { current, total });
+                if (current % 25 === 0 || current === total) mainWindow?.webContents.send('photos:refresh');
+            }).then(() => {
+                mainWindow?.webContents.send('thumbnails:progress', { current: 0, total: 0, done: true });
+                mainWindow?.webContents.send('photos:refresh');
+            }).catch(() => { /* best effort */ });
+        }, 500);
+    }
+    return summary;
+});
+
 // The library root — the folder holding the "Année XXXX" year folders — on
 // the CURRENT catalog's disk. Imports default here so a new "Année 2026/date"
 // lands beside the existing years instead of wherever a stale path pointed.

@@ -593,7 +593,7 @@ class ImportService {
         return photoId;
     }
 
-    private async generateThumbnailsForPhotos(
+    async generateThumbnailsForPhotos(
         photoIds: string[],
         onProgress?: (current: number, total: number) => void
     ): Promise<void> {
@@ -639,6 +639,58 @@ class ImportService {
 
             onProgress?.(i + 1, photoIds.length);
         }
+    }
+
+    /**
+     * Lightroom "Synchronize Folder" analysis: what the disk has that the
+     * catalog doesn't, and vice versa. Files not in the catalog are split into
+     * genuinely new photos and SUSPECTED DUPLICATES (same name + size as a
+     * photo already cataloged elsewhere) so the user decides about those
+     * explicitly instead of silently doubling the library.
+     */
+    async analyzeFolderSync(rootPath: string): Promise<{
+        newFiles: string[];
+        duplicates: { path: string; existingPath: string }[];
+        missing: { id: string; path: string }[];
+        onDisk: number;
+        inCatalog: number;
+    }> {
+        const nfc = (v: string) => v.normalize('NFC');
+        const files = await this.scanDirectory(rootPath, true);
+        const onDisk = files.filter(f => this.isSupportedFile(f));
+        const diskSet = new Set(onDisk.map(nfc));
+
+        const db = catalogDb.getDb();
+        const rows = db.prepare('SELECT id, file_path, file_name, file_size FROM photos').all() as
+            { id: string; file_path: string; file_name: string; file_size: number | null }[];
+        const catalogPaths = new Set(rows.map(r => nfc(r.file_path)));
+        const bySig = new Map<string, string>();
+        for (const r of rows) bySig.set(`${nfc(r.file_name)}|${r.file_size || 0}`, r.file_path);
+
+        const newFiles: string[] = [];
+        const duplicates: { path: string; existingPath: string }[] = [];
+        for (const f of onDisk) {
+            if (catalogPaths.has(nfc(f))) continue;
+            let size = 0;
+            try { size = fs.statSync(f).size; } catch { continue; }
+            const existing = bySig.get(`${nfc(path.basename(f))}|${size}`);
+            if (existing) duplicates.push({ path: f, existingPath: existing });
+            else newFiles.push(f);
+        }
+
+        const rootN = nfc(rootPath.replace(/\/+$/, '')) + '/';
+        const missing: { id: string; path: string }[] = [];
+        let inCatalog = 0;
+        for (const r of rows) {
+            const pn = nfc(r.file_path);
+            if (!pn.startsWith(rootN)) continue;
+            inCatalog++;
+            if (!diskSet.has(pn) && !fs.existsSync(r.file_path)) missing.push({ id: r.id, path: r.file_path });
+        }
+
+        newFiles.sort();
+        duplicates.sort((a, b) => a.path.localeCompare(b.path));
+        return { newFiles, duplicates, missing, onDisk: onDisk.length, inCatalog };
     }
 
     /** Available bytes on the volume holding dir (statfs; optimistic on error). */

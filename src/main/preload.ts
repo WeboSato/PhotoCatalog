@@ -83,6 +83,8 @@ contextBridge.exposeInMainWorld('api', {
     cardPreview: (filePath: string) => ipcRenderer.invoke('import:cardPreview', filePath),
     getFreeSpace: (dirPath: string) => ipcRenderer.invoke('fs:getFreeSpace', dirPath),
     getLibraryRoot: () => ipcRenderer.invoke('import:getLibraryRoot'),
+    syncAnalyze: (rootPath: string) => ipcRenderer.invoke('sync:analyze', rootPath),
+    syncRun: (opts: { importPaths: string[]; removeMissingIds: string[] }) => ipcRenderer.invoke('sync:run', opts),
     reindexPhoto: (photoId: string) => ipcRenderer.invoke('import:reindex', photoId),
     reindexAllPhotos: () => ipcRenderer.invoke('import:reindexAll'),
     regenerateThumbnails: () => ipcRenderer.invoke('import:reindexAll'), // alias used by SettingsModal
@@ -365,6 +367,8 @@ export interface ElectronAPI {
     cardPreview: (filePath: string) => Promise<string | null>;
     getFreeSpace: (dirPath: string) => Promise<{ free: number; total: number } | null>;
     getLibraryRoot: () => Promise<string>;
+    syncAnalyze: (rootPath: string) => Promise<{ newFiles: string[]; duplicates: { path: string; existingPath: string }[]; missing: { id: string; path: string }[]; onDisk: number; inCatalog: number }>;
+    syncRun: (opts: { importPaths: string[]; removeMissingIds: string[] }) => Promise<{ imported: number; errors: number; removed: number }>;
     reindexPhoto: (photoId: string) => Promise<boolean>;
     reindexAllPhotos: () => Promise<{ success: number; failed: number }>;
 

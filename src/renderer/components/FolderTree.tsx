@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useCatalogStore } from '../stores/catalogStore';
+import { SyncFolderDialog } from './SyncFolderDialog';
 import {
     Folder,
     FolderOpen,
@@ -265,7 +266,7 @@ const FolderContextMenuComponent: React.FC<{
                 disabled={isSyncing}
             >
                 <RefreshCw size={14} className={isSyncing ? 'animate-spin' : ''} />
-                {isSyncing ? 'Syncing...' : 'Sync this folder'}
+                {isSyncing ? 'Synchronisation…' : 'Synchroniser le dossier…'}
             </button>
             <button
                 className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-white/15 hover:text-white flex items-center gap-2"
@@ -533,32 +534,24 @@ export const FolderTree: React.FC = () => {
         closeContextMenu();
     }, [contextMenu.folder, closeContextMenu, loadFolders]);
 
-    const handleSyncFolder = useCallback(async () => {
+    // Lightroom-style "Synchronize Folder": analyze first, then let the user
+    // decide about new photos, suspected duplicates and missing files.
+    const [syncDialog, setSyncDialog] = useState<{ open: boolean; path: string; name: string }>({ open: false, path: '', name: '' });
+    const handleSyncFolder = useCallback(() => {
         if (contextMenu.folder) {
-            setIsSyncing(true);
-            try {
-                console.log('[FolderTree] Syncing folder:', contextMenu.folder.path);
-                await window.api.importFromPath({
-                    sourcePath: contextMenu.folder.path,
-                    recursive: true,
-                    generateThumbnails: true,
-                    extractMetadata: true
-                });
-                // Refresh folders after sync
-                loadFolders();
-                // Refresh photos if this folder is selected
-                if (activeFolderId === contextMenu.folder.path) {
-                    const photos = await window.api.getPhotosInFolder(contextMenu.folder.path);
-                    setPhotos(photos);
-                }
-            } catch (error) {
-                console.error('Failed to sync folder:', error);
-            } finally {
-                setIsSyncing(false);
-            }
+            setSyncDialog({ open: true, path: contextMenu.folder.path, name: contextMenu.folder.name });
         }
         closeContextMenu();
-    }, [contextMenu.folder, closeContextMenu, loadFolders, activeFolderId, setPhotos]);
+    }, [contextMenu.folder, closeContextMenu]);
+    const handleSyncDone = useCallback(async () => {
+        loadFolders();
+        if (activeFolderId) {
+            try {
+                const photos = await window.api.getPhotosInFolder(activeFolderId);
+                setPhotos(photos);
+            } catch { /* grid refreshes on photos:refresh anyway */ }
+        }
+    }, [loadFolders, activeFolderId, setPhotos]);
 
     // Drag and drop handlers
     const handleDragStart = useCallback((e: React.DragEvent, folder: FolderNode) => {
@@ -651,6 +644,16 @@ export const FolderTree: React.FC = () => {
                     />
                 ))}
             </div>
+
+            {/* Synchronize Folder dialog — independent of the context menu,
+                which closes the moment the dialog opens */}
+            <SyncFolderDialog
+                isOpen={syncDialog.open}
+                folderPath={syncDialog.path}
+                folderName={syncDialog.name}
+                onClose={() => setSyncDialog(d => ({ ...d, open: false }))}
+                onDone={handleSyncDone}
+            />
 
             {/* Context Menu */}
             {contextMenu.visible && contextMenu.folder && (

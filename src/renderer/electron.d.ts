@@ -81,6 +81,8 @@ interface ElectronAPI {
     cardPreview: (filePath: string) => Promise<string | null>;
     getFreeSpace: (dirPath: string) => Promise<{ free: number; total: number } | null>;
     getLibraryRoot: () => Promise<string>;
+    syncAnalyze: (rootPath: string) => Promise<{ newFiles: string[]; duplicates: { path: string; existingPath: string }[]; missing: { id: string; path: string }[]; onDisk: number; inCatalog: number }>;
+    syncRun: (opts: { importPaths: string[]; removeMissingIds: string[] }) => Promise<{ imported: number; errors: number; removed: number }>;
     reindexPhoto: (photoId: string) => Promise<boolean>;
     reindexAllPhotos: () => Promise<{ success: number; failed: number }>;
 
