@@ -1495,6 +1495,30 @@ ipcMain.handle('import:scanCard', async (_event, dirPath: string) => {
     return files.map(f => ({ ...f, alreadyImported: known.has(`${f.name}|${f.size}`) }));
 });
 
+// The library root — the folder holding the "Année XXXX" year folders — on
+// the CURRENT catalog's disk. Imports default here so a new "Année 2026/date"
+// lands beside the existing years instead of wherever a stale path pointed.
+ipcMain.handle('import:getLibraryRoot', () => {
+    try {
+        // macOS stores names in decomposed Unicode (NFD): "Année" in SQL never
+        // matches. Match in JS on NFC-normalized basenames instead.
+        const rows = catalogDb.getDb().prepare('SELECT path FROM folders').all() as { path: string }[];
+        const yearFolder = /^ann[ée]e\s+\d{4}$/i;
+        const counts = new Map<string, number>();
+        for (const r of rows) {
+            if (!yearFolder.test(path.basename(r.path).normalize('NFC'))) continue;
+            const parent = path.dirname(r.path);
+            if (fs.existsSync(parent)) counts.set(parent, (counts.get(parent) || 0) + 1);
+        }
+        let best: string | null = null, bestN = 0;
+        for (const [p, n] of counts) if (n > bestN) { best = p; bestN = n; }
+        if (best) return best;
+    } catch { /* fall through */ }
+    const catalogDir = path.dirname(settingsService.getCatalogDbPath());
+    const images = path.join(catalogDir, 'Images');
+    return fs.existsSync(images) ? images : catalogDir;
+});
+
 // Free space on the volume holding a directory (walks up to an existing dir).
 ipcMain.handle('fs:getFreeSpace', async (_event, dirPath: string) => {
     try {

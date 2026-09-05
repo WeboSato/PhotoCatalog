@@ -80,6 +80,7 @@ interface ElectronAPI {
     scanCard: (dirPath: string) => Promise<any[]>;
     cardPreview: (filePath: string) => Promise<string | null>;
     getFreeSpace: (dirPath: string) => Promise<{ free: number; total: number } | null>;
+    getLibraryRoot: () => Promise<string>;
     reindexPhoto: (photoId: string) => Promise<boolean>;
     reindexAllPhotos: () => Promise<{ success: number; failed: number }>;
 

@@ -64,6 +64,14 @@ export const ImportCardDialog: React.FC<ImportCardDialogProps> = ({
         const now = new Date();
         setSubfolder(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`);
 
+        // Respect the current library: default to its root (where the "Année
+        // XXXX" folders live) unless the remembered destination is already
+        // inside it. A stale path on another disk/root is never reused blindly.
+        window.api.getLibraryRoot().then((root: string) => {
+            if (generationRef.current !== gen || !root) return;
+            setDestination(prev => (prev && prev.startsWith(root)) ? prev : root);
+        }).catch(() => { /* keep whatever we have */ });
+
         window.api.scanCard(dcimPath).then((scanned: CardFile[]) => {
             if (generationRef.current !== gen) return;
             setFiles(scanned);
