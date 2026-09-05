@@ -45,6 +45,9 @@ export const ImportCardDialog: React.FC<ImportCardDialogProps> = ({
     const [subfolder, setSubfolder] = useState('');
     const [keywordsInput, setKeywordsInput] = useState('');
     const [deleteAfter, setDeleteAfter] = useState(false);
+    const [freeSpace, setFreeSpace] = useState<number | null>(null);
+    // Live copy telemetry (speed + bytes) from the fast copy phase.
+    const [copyStats, setCopyStats] = useState<{ copiedBytes: number; totalBytes: number; mbps: number } | null>(null);
 
     // Bumped on close so in-flight preview loops from a previous open stop cleanly.
     const generationRef = useRef(0);
@@ -66,6 +69,14 @@ export const ImportCardDialog: React.FC<ImportCardDialogProps> = ({
             setFiles(scanned);
             // Everything new is pre-selected; already-imported photos start unchecked.
             setSelected(new Set(scanned.filter(f => !f.alreadyImported).map(f => f.path)));
+            // Library-style destination: "Année <année de la prise de vue>/<date
+            // du jour>" — recognized from the newest photo on the card, so the
+            // dated folder lands in the right year automatically.
+            const shootYear = scanned.length
+                ? new Date(Math.max(...scanned.map(f => f.mtimeMs))).getFullYear()
+                : now.getFullYear();
+            const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+            setSubfolder(`Année ${shootYear}/${dateStr}`);
             setPhase('ready');
         }).catch((e: any) => {
             if (generationRef.current !== gen) return;
@@ -100,12 +111,25 @@ export const ImportCardDialog: React.FC<ImportCardDialogProps> = ({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [phase, files]);
 
-    // Live progress from the import pipeline.
+    // Watchdog: how much room the destination volume actually has.
+    useEffect(() => {
+        if (!isOpen || !destination) { setFreeSpace(null); return; }
+        let cancelled = false;
+        window.api.getFreeSpace(destination).then(r => { if (!cancelled) setFreeSpace(r?.free ?? null); });
+        return () => { cancelled = true; };
+    }, [isOpen, destination, phase]);
+
+    // Live progress from the import pipeline (copy phase carries bytes + speed).
     useEffect(() => {
         if (!isOpen) return;
         const unsubscribe = window.api.onImportProgress((p: any) => {
-            if (p.phase === 'importing' || p.phase === 'thumbnails') {
+            if (p.phase === 'copying' || p.phase === 'importing' || p.phase === 'thumbnails') {
                 setProgress({ current: p.current || 0, total: p.total || 0, file: p.currentFile });
+                if (p.phase === 'copying' && p.totalBytes) {
+                    setCopyStats({ copiedBytes: p.copiedBytes || 0, totalBytes: p.totalBytes, mbps: p.mbps || 0 });
+                } else if (p.phase !== 'copying') {
+                    setCopyStats(null);
+                }
             }
         });
         return unsubscribe;
@@ -121,6 +145,9 @@ export const ImportCardDialog: React.FC<ImportCardDialogProps> = ({
 
     const selectedFiles = useMemo(() => files.filter(f => selected.has(f.path)), [files, selected]);
     const selectedBytes = useMemo(() => selectedFiles.reduce((s, f) => s + f.size, 0), [selectedFiles]);
+    const SPACE_MARGIN = 1024 ** 3; // the import keeps 1 GB free, mirror it here
+    const spaceOk = freeSpace == null || selectedBytes + SPACE_MARGIN <= freeSpace;
+    const missingBytes = freeSpace == null ? 0 : Math.max(0, selectedBytes + SPACE_MARGIN - freeSpace);
     const newCount = useMemo(() => files.filter(f => !f.alreadyImported).length, [files]);
 
     const handleImport = async () => {
@@ -353,6 +380,13 @@ export const ImportCardDialog: React.FC<ImportCardDialogProps> = ({
                                             → {destination.replace(/\/+$/, '')}{subfolder ? '/' + subfolder : ''}
                                         </p>
                                     )}
+                                    {destination && freeSpace != null && (
+                                        <p className={`mt-1.5 text-[11px] ${spaceOk ? 'text-emerald-400/90' : 'text-red-400'}`}>
+                                            {spaceOk
+                                                ? `💾 ${formatBytes(freeSpace)} libres — ✓ assez pour la sélection (${formatBytes(selectedBytes)})`
+                                                : `⚠️ Espace insuffisant : il manque ${formatBytes(missingBytes)} pour tout copier — décoche des photos ou libère de l'espace.`}
+                                        </p>
+                                    )}
                                 </div>
 
                                 <div>
@@ -393,6 +427,12 @@ export const ImportCardDialog: React.FC<ImportCardDialogProps> = ({
                                                 <span className="truncate mr-2">{progress.file || 'Import…'}</span>
                                                 <span>{progress.current}/{progress.total}</span>
                                             </div>
+                                            {copyStats && (
+                                                <div className="flex justify-between text-[10px] text-gray-500 mb-1">
+                                                    <span>{formatBytes(copyStats.copiedBytes)} / {formatBytes(copyStats.totalBytes)}</span>
+                                                    <span className="text-emerald-400/80">{copyStats.mbps} Mo/s</span>
+                                                </div>
+                                            )}
                                             <div className="h-1.5 bg-white/10 rounded overflow-hidden">
                                                 <div
                                                     className="h-full bg-white/60 transition-all"
@@ -403,7 +443,7 @@ export const ImportCardDialog: React.FC<ImportCardDialogProps> = ({
                                     )}
                                     <button
                                         onClick={handleImport}
-                                        disabled={busy || selected.size === 0 || !destination}
+                                        disabled={busy || selected.size === 0 || !destination || !spaceOk}
                                         className="w-full flex items-center justify-center gap-2 py-2.5 rounded bg-white/10 hover:bg-white/15 text-white text-sm disabled:opacity-40 disabled:cursor-not-allowed"
                                     >
                                         {busy

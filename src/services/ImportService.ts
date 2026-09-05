@@ -50,7 +50,7 @@ export interface ImportOptions {
 }
 
 export interface ImportProgress {
-    phase: 'scanning' | 'importing' | 'thumbnails' | 'complete' | 'error';
+    phase: 'scanning' | 'copying' | 'importing' | 'thumbnails' | 'complete' | 'error';
     current: number;
     total: number;
     currentFile?: string;
@@ -58,6 +58,9 @@ export interface ImportProgress {
     skippedCount?: number;
     errorCount?: number;
     errors?: string[];
+    copiedBytes?: number;   // copy phase: bytes landed on the destination
+    totalBytes?: number;    // copy phase: bytes to transfer in total
+    mbps?: number;          // copy phase: live throughput
 }
 
 export interface ImportResult {
@@ -230,13 +233,116 @@ class ImportService {
 
         const imageFiles = filePaths.filter(f => this.isSupportedFile(f));
 
-        for (let i = 0; i < imageFiles.length; i++) {
-            const filePath = imageFiles[i];
+        // Dedup UP FRONT (path AND name+size) so a duplicate is never copied
+        // off the card just to be thrown away afterwards.
+        const toImport: string[] = [];
+        for (const f of imageFiles) {
+            if (options.skipDuplicates !== false && this.isAlreadyInCatalog(f)) result.skippedFiles.push(f);
+            else toImport.push(f);
+        }
+
+        // ---- Fast copy phase (card → destination) --------------------------
+        // A small pool of concurrent copies: a card reader feeds 4 streams far
+        // better than 1, and the old one-file-at-a-time copyFileSync also froze
+        // the main process. Byte-level progress with live MB/s, and a disk-space
+        // watchdog: checked before anything is copied (abort with the missing
+        // amount) and re-checked during the run (stop cleanly, never fill the
+        // destination drive to the last gigabyte).
+        const precopied = new Map<string, string>();
+        if (options.destinationPath && toImport.length > 0) {
+            fs.mkdirSync(options.destinationPath, { recursive: true });
+
+            const sizes = new Map<string, number>();
+            let totalBytes = 0;
+            for (const f of toImport) {
+                try { const sz = fs.statSync(f).size; sizes.set(f, sz); totalBytes += sz; }
+                catch { sizes.set(f, 0); }
+            }
+
+            const MARGIN = 1024 ** 3; // keep at least 1 GB free on the destination
+            const free = await this.freeBytes(options.destinationPath);
+            if (free < totalBytes + MARGIN) {
+                const missing = (totalBytes + MARGIN - free) / 1024 ** 3;
+                const msg = `Espace insuffisant sur le disque de destination : il manque ${missing.toFixed(1)} Go pour copier ${(totalBytes / 1024 ** 3).toFixed(1)} Go. Libère de l'espace ou décoche des photos.`;
+                result.success = false;
+                result.errors.push({ file: options.destinationPath, error: msg });
+                onProgress?.({ phase: 'error', current: 0, total: toImport.length, errors: [msg] });
+                result.duration = Date.now() - startTime;
+                return result;
+            }
+
+            // Collision-safe destination names planned before any copy starts —
+            // including collisions WITHIN this batch (two cards, same IMG_0001).
+            const planned = new Set<string>();
+            for (const f of toImport) {
+                const size = sizes.get(f) || 0;
+                const ext = path.extname(f);
+                const base = path.basename(f, ext);
+                let dest = path.join(options.destinationPath, path.basename(f));
+                let n = 1;
+                while (planned.has(dest) || (fs.existsSync(dest) && fs.statSync(dest).size !== size)) {
+                    dest = path.join(options.destinationPath, `${base}_${n++}${ext}`);
+                }
+                planned.add(dest);
+                precopied.set(f, dest);
+            }
+
+            let copiedBytes = 0;
+            let done = 0;
+            let aborted = false;
+            const t0 = Date.now();
+            const queue = [...toImport];
+            const emit = (currentFile?: string) => onProgress?.({
+                phase: 'copying',
+                current: done,
+                total: toImport.length,
+                currentFile,
+                copiedBytes,
+                totalBytes,
+                mbps: Math.round(copiedBytes / 1048576 / Math.max(0.5, (Date.now() - t0) / 1000)),
+                importedCount: 0,
+                skippedCount: result.skippedFiles.length,
+                errorCount: result.errors.length
+            });
+            emit();
+            const worker = async () => {
+                for (;;) {
+                    const src = queue.shift();
+                    if (src === undefined || aborted) return;
+                    const dest = precopied.get(src)!;
+                    try {
+                        // Already there from an interrupted run? Skip the bytes.
+                        if (!(fs.existsSync(dest) && fs.statSync(dest).size === sizes.get(src))) {
+                            await fs.promises.copyFile(src, dest);
+                        }
+                        copiedBytes += sizes.get(src) || 0;
+                    } catch (e: any) {
+                        result.errors.push({ file: src, error: String(e?.message || e) });
+                        precopied.delete(src);
+                    }
+                    done++;
+                    emit(path.basename(src));
+                    if (!aborted && done % 10 === 0 && await this.freeBytes(options.destinationPath!) < MARGIN) {
+                        aborted = true;
+                        for (const rest of queue.splice(0)) {
+                            result.errors.push({ file: rest, error: 'Espace disque insuffisant — import interrompu' });
+                            precopied.delete(rest);
+                        }
+                    }
+                }
+            };
+            await Promise.all([0, 1, 2, 3].map(() => worker()));
+        }
+
+        // ---- Register phase (sequential: DB writes stay race-free) ---------
+        const files = options.destinationPath ? toImport.filter(f => precopied.has(f)) : toImport;
+        for (let i = 0; i < files.length; i++) {
+            const filePath = files[i];
 
             onProgress?.({
                 phase: 'importing',
                 current: i + 1,
-                total: imageFiles.length,
+                total: files.length,
                 currentFile: path.basename(filePath),
                 importedCount: result.importedIds.length,
                 skippedCount: result.skippedFiles.length,
@@ -244,15 +350,20 @@ class ImportService {
             });
 
             try {
-                // Same duplicate check as importFromPath: path AND name+size.
-                if (options.skipDuplicates !== false && this.isAlreadyInCatalog(filePath)) {
-                    result.skippedFiles.push(filePath);
-                    continue;
-                }
-
-                const photoId = await this.processFile(filePath, { ...options, sourcePath: filePath });
+                const photoId = await this.processFile(filePath, { ...options, sourcePath: filePath }, precopied.get(filePath));
                 if (photoId) {
                     result.importedIds.push(photoId);
+
+                    // "Delete from card": only now — the copy has been verified
+                    // byte-for-byte in size AND registered in the catalog.
+                    if (options.deleteAfterImport && !options.moveFiles && precopied.has(filePath)) {
+                        try {
+                            const dest = precopied.get(filePath)!;
+                            if (fs.statSync(dest).size === fs.statSync(filePath).size) {
+                                fs.unlinkSync(filePath);
+                            }
+                        } catch { /* card may be read-only */ }
+                    }
                 }
             } catch (error) {
                 const errorMsg = error instanceof Error ? error.message : String(error);
@@ -289,7 +400,7 @@ class ImportService {
         return result;
     }
 
-    private async processFile(filePath: string, options: ImportOptions): Promise<string | null> {
+    private async processFile(filePath: string, options: ImportOptions, precopiedDest?: string): Promise<string | null> {
         // Get file info
         const fileInfo = metadataService.getFileInfo(filePath);
         if (!fileInfo) {
@@ -318,7 +429,17 @@ class ImportService {
 
         // Handle file copy/move if destination is specified
         let finalPath = filePath;
-        if (options.destinationPath) {
+        if (precopiedDest) {
+            // The fast copy phase already landed the file — just take the XMP
+            // sidecar along and register against the copy.
+            finalPath = precopiedDest;
+            if (XmpSvc) {
+                const xmpSourcePath = XmpSvc.getXmpPath(filePath);
+                if (fs.existsSync(xmpSourcePath)) {
+                    try { fs.copyFileSync(xmpSourcePath, XmpSvc.getXmpPath(precopiedDest)); } catch { /* sidecar optional */ }
+                }
+            }
+        } else if (options.destinationPath) {
             // The destination (incl. the dated subfolder) may not exist yet — the
             // copy used to fail with ENOENT on every single file without this.
             fs.mkdirSync(options.destinationPath, { recursive: true });
@@ -517,6 +638,16 @@ class ImportService {
             }
 
             onProgress?.(i + 1, photoIds.length);
+        }
+    }
+
+    /** Available bytes on the volume holding dir (statfs; optimistic on error). */
+    private async freeBytes(dir: string): Promise<number> {
+        try {
+            const st = await (fs.promises as any).statfs(dir);
+            return st.bavail * st.bsize;
+        } catch {
+            return Number.MAX_SAFE_INTEGER;
         }
     }
 

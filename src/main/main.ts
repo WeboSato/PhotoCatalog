@@ -1495,6 +1495,18 @@ ipcMain.handle('import:scanCard', async (_event, dirPath: string) => {
     return files.map(f => ({ ...f, alreadyImported: known.has(`${f.name}|${f.size}`) }));
 });
 
+// Free space on the volume holding a directory (walks up to an existing dir).
+ipcMain.handle('fs:getFreeSpace', async (_event, dirPath: string) => {
+    try {
+        let p = dirPath;
+        while (p && p !== '/' && !fs.existsSync(p)) p = path.dirname(p);
+        const st = await (fs.promises as any).statfs(p || '/');
+        return { free: st.bavail * st.bsize, total: st.blocks * st.bsize };
+    } catch {
+        return null;
+    }
+});
+
 const cardPreviewDir = () => path.join(app.getPath('userData'), 'card-previews');
 ipcMain.handle('import:cardPreview', async (_event, filePath: string) => {
     try {
