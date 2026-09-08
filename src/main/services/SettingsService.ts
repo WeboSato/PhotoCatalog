@@ -12,6 +12,7 @@ interface AppSettings {
     showArchived: boolean;
     autoTagOnStartup: boolean;
     autoWriteXmp: boolean;
+    xmpOptInReset?: boolean;
 }
 
 const defaultSettings: AppSettings = {
@@ -40,6 +41,15 @@ class SettingsService {
             name: 'settings',
             defaults: defaultSettings
         }) as StoreType;
+
+        // One-time reset: autoWriteXmp shipped enabled and its startup sweep
+        // rewrote sidecars other tools own. A changed default cannot undo an
+        // already-persisted `true`, so turn it off once, explicitly.
+        if (!this.store.get('xmpOptInReset' as any)) {
+            this.store.set('autoWriteXmp', false);
+            this.store.set('xmpOptInReset' as any, true as any);
+            console.log('[Settings] autoWriteXmp remis sur "off" (écriture XMP désormais opt-in)');
+        }
     }
 
     get<K extends keyof AppSettings>(key: K): AppSettings[K] {
