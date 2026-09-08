@@ -389,6 +389,7 @@ export const InfoPanel: React.FC = React.memo(() => {
     // All store selectors at the top
     const rightPanelCollapsed = useCatalogStore((s) => s.rightPanelCollapsed);
     const activePhotoId = useCatalogStore((s) => s.activePhotoId);
+    const storePhotos = useCatalogStore((s) => s.photos);
     const viewMode = useCatalogStore((s) => s.viewMode);
     const devSettings = useCatalogStore((s) => s.developmentSettings);
     const updateDevelopmentSetting = useCatalogStore((s) => s.updateDevelopmentSetting);
@@ -411,13 +412,14 @@ export const InfoPanel: React.FC = React.memo(() => {
     // All useEffect hooks
     useEffect(() => {
         if (activePhotoId) {
-            const { photos } = getStore();
-            const photo = photos.find((p) => p.id === activePhotoId);
-            setActivePhoto(photo || null);
+            // Depend on the store's photos: the id is often set before the array
+            // is loaded (session restore, opening straight into Develop), and a
+            // snapshot read once left the panel stuck on "select a photo".
+            setActivePhoto(storePhotos.find((p) => p.id === activePhotoId) || null);
         } else {
             setActivePhoto(null);
         }
-    }, [activePhotoId]);
+    }, [activePhotoId, storePhotos]);
 
     useEffect(() => {
         if (activePhoto) {

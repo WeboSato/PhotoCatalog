@@ -11,6 +11,7 @@ interface AppSettings {
     language: string;
     showArchived: boolean;
     autoTagOnStartup: boolean;
+    autoWriteXmp: boolean;
 }
 
 const defaultSettings: AppSettings = {
@@ -20,7 +21,8 @@ const defaultSettings: AppSettings = {
     gridSize: 150,
     language: 'fr',
     showArchived: false,
-    autoTagOnStartup: false // off by default: heavy on external HDDs (like Lightroom)
+    autoTagOnStartup: false, // off by default: heavy on external HDDs (like Lightroom)
+    autoWriteXmp: true // Lightroom's "automatically write changes into XMP"
 };
 
 // Use any type to avoid TS issues with electron-store

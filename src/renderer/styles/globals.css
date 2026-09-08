@@ -361,9 +361,11 @@ body {
 
 .filmstrip-item img {
     display: block;
-    width: auto;
+    width: 100%;
     height: 100%;
-    object-fit: cover;
+    /* contain, not cover: a portrait frame was cropped left/right in the
+       square filmstrip cell, hiding the actual subject. */
+    object-fit: contain;
 }
 
 .filmstrip-item.active {

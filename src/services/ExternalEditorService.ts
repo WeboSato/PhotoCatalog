@@ -496,12 +496,47 @@ class ExternalEditorService {
             date_taken: original.date_taken,
             rating: original.rating,
             color_label: original.color_label,
-            edited_from_id: original.id
+            edited_from_id: original.id,
+            // Affinity's TIFF loses the EXIF, so the copy would show no camera,
+            // lens or exposure at all: carry the shot's identity over from the
+            // original. Same photo, same shooting data.
+            ...this.inheritedShotFields(original)
         } as any);
         catalogDb.updatePhoto(original.id, { edit_copy_path: copyPath } as any);
 
         this.registerLinkedEdit(copyPath, copyPhotoId);
         return { copyPath, copyPhotoId };
+    }
+
+    /** Shooting metadata a linked copy should inherit from its source. */
+    inheritedShotFields(src: any): Record<string, any> {
+        const out: Record<string, any> = {};
+        for (const k of ['camera_make', 'camera_model', 'lens_model', 'focal_length',
+                         'aperture', 'shutter_speed', 'iso', 'flash_used',
+                         'gps_latitude', 'gps_longitude', 'title', 'caption',
+                         'creator', 'copyright']) {
+            if (src[k] !== null && src[k] !== undefined) out[k] = src[k];
+        }
+        return out;
+    }
+
+    /** Backfill copies made before inheritance existed (they show no camera). */
+    backfillCopyMetadata(): number {
+        try {
+            const rows = catalogDb.getDb()
+                .prepare('SELECT id, edited_from_id FROM photos WHERE edited_from_id IS NOT NULL AND camera_model IS NULL')
+                .all() as { id: string; edited_from_id: string }[];
+            let fixed = 0;
+            for (const r of rows) {
+                const src = catalogDb.getPhoto(r.edited_from_id);
+                if (!src) continue;
+                const fields = this.inheritedShotFields(src);
+                if (Object.keys(fields).length) { catalogDb.updatePhoto(r.id, fields as any); fixed++; }
+            }
+            return fixed;
+        } catch {
+            return 0;
+        }
     }
 
     /** Start watching a linked copy for saves from the editor. */

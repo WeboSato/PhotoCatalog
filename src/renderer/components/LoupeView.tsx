@@ -391,7 +391,7 @@ export const LoupeView: React.FC = () => {
             {/* Image container */}
             <div
                 ref={containerRef}
-                className="flex-1 relative overflow-hidden flex items-center justify-center"
+                className="flex-1 min-h-0 min-w-0 relative overflow-hidden flex items-center justify-center"
                 onWheel={handleWheel}
                 onMouseDown={handleMouseDown}
                 onMouseMove={handleMouseMove}

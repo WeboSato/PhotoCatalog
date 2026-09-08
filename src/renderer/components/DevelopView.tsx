@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useCatalogStore, Photo } from '../stores/catalogStore';
 import { getImageUrl, getPreviewUrl } from '../utils/imageUrl';
 import {
@@ -798,58 +798,63 @@ export const DevelopView: React.FC = () => {
     };
 
     // Filtres CSS optimises
+    // Real tone mapping instead of a couple of CSS approximations: the sliders
+    // are sampled into a lookup table fed to an SVG feComponentTransfer, so
+    // highlights / shadows / whites / blacks actually shape the curve — CSS
+    // filters alone can only scale the whole image, which is why every slider
+    // except exposure and contrast used to do nothing.
+    const toneTable = useMemo(() => {
+        const S = 33;
+        const vals: number[] = [];
+        for (let i = 0; i < S; i++) {
+            let y = i / (S - 1);
+
+            // Exposure in stops (±2 at full travel)
+            y *= Math.pow(2, settings.exposure / 50);
+
+            // Black / white points
+            const black = -settings.blacks / 500;
+            const white = 1 + settings.whites / 500;
+            y = (y - black) / Math.max(0.05, white - black);
+
+            // Contrast around mid-grey (dehaze adds a touch)
+            const c = 1 + (settings.contrast + settings.dehaze * 0.4) / 100;
+            y = (y - 0.5) * c + 0.5;
+
+            const cl = Math.min(1, Math.max(0, y));
+            // Shadows lift the dark end, highlights the bright end
+            y += (settings.shadows / 100) * Math.pow(1 - cl, 2) * 0.5;
+            y += (settings.highlights / 100) * Math.pow(cl, 2) * 0.5;
+            // Clarity: mid-tone contrast, strongest at mid-grey
+            y += (settings.clarity / 100) * (1 - Math.abs(cl - 0.5) * 2) * (cl - 0.5) * 0.6;
+
+            vals.push(Math.min(1, Math.max(0, y)));
+        }
+        return vals.map(v => v.toFixed(4)).join(' ');
+    }, [settings.exposure, settings.blacks, settings.whites, settings.contrast,
+        settings.dehaze, settings.shadows, settings.highlights, settings.clarity]);
+
+    // White balance as channel gains: warm pushes red, cools blue (and tint
+    // trades green against magenta) — a real cast, not a sepia overlay.
+    const wbMatrix = useMemo(() => {
+        const t = settings.temperature / 100;
+        const ti = settings.tint / 100;
+        const r = 1 + t * 0.35 + ti * 0.1;
+        const g = 1 - ti * 0.2;
+        const b = 1 - t * 0.35 + ti * 0.1;
+        return `${r} 0 0 0 0  0 ${g} 0 0 0  0 0 ${b} 0 0  0 0 0 1 0`;
+    }, [settings.temperature, settings.tint]);
+
+    // Vibrance ≈ a gentler saturation, folded into the same matrix.
+    const satValue = useMemo(
+        () => Math.max(0, (1 + settings.saturation / 100) * (1 + settings.vibrance / 200)).toFixed(3),
+        [settings.saturation, settings.vibrance]
+    );
+
     const generateFilter = (): string => {
-        const filters: string[] = [];
-
-        if (settings.exposure !== 0) {
-            const brightness = Math.max(0, 1 + settings.exposure / 3);
-            filters.push(`brightness(${brightness})`);
-        }
-
-        if (settings.contrast !== 0) {
-            const contrast = Math.max(0, 1 + settings.contrast / 100);
-            filters.push(`contrast(${contrast})`);
-        }
-
-        if (settings.saturation !== 0) {
-            const saturate = Math.max(0, 1 + settings.saturation / 100);
-            filters.push(`saturate(${saturate})`);
-        }
-
-        if (settings.clarity !== 0) {
-            const clarity = Math.max(0, 1 + settings.clarity / 100);
-            filters.push(`contrast(${clarity})`);
-        }
-
-        if (settings.sharpening > 0) {
-            const sharpBoost = settings.sharpening / 200;
-            if (!filters.some(f => f.includes('contrast'))) {
-                filters.push(`contrast(${1 + sharpBoost})`);
-            }
-        }
-
-        if (settings.dehaze !== 0) {
-            const dehazeContrast = settings.dehaze / 100;
-            const dehazeSat = settings.dehaze / 200;
-            filters.push(`contrast(${1 + dehazeContrast * 0.3})`);
-            filters.push(`saturate(${1 + dehazeSat})`);
-        }
-
-        if (settings.noiseReduction > 50) {
-            filters.push(`blur(${(settings.noiseReduction - 50) / 100}px)`);
-        }
-
-        if (settings.temperature !== 0) {
-            const tempShift = settings.temperature / 10;
-            filters.push(`sepia(${Math.abs(tempShift) / 50})`);
-            if (settings.temperature > 0) {
-                filters.push(`hue-rotate(-10deg)`);
-            } else {
-                filters.push(`hue-rotate(10deg)`);
-            }
-        }
-
-        return filters.join(' ') || 'none';
+        const filters = ['url(#dev-filter)'];
+        if (settings.noiseReduction > 50) filters.push(`blur(${(settings.noiseReduction - 50) / 120}px)`);
+        return filters.join(' ');
     };
 
     const generateVignette = (): React.CSSProperties | undefined => {
@@ -1029,7 +1034,7 @@ export const DevelopView: React.FC = () => {
                     </div>
                 </div>
 
-                <div className="flex-1 flex items-center justify-center overflow-auto p-4">
+                <div className="flex-1 min-h-0 min-w-0 flex items-center justify-center overflow-hidden p-4">
                     {removeMode ? (
                         <div className="flex flex-col items-center gap-3 max-w-full max-h-full">
                             <div className="flex items-center gap-3 text-xs">
@@ -1161,7 +1166,7 @@ export const DevelopView: React.FC = () => {
                             </div>
                         </div>
                     ) : (
-                    <div className="relative inline-block">
+                    <div className="relative" style={{ lineHeight: 0, maxWidth: '100%', maxHeight: '100%' }}>
                         <img
                             key={imgVersion}
                             src={imageSrc || ''}
@@ -1170,13 +1175,15 @@ export const DevelopView: React.FC = () => {
                             onMouseMove={handleWbHover}
                             onMouseLeave={() => setWbHover(null)}
                             onLoad={() => setWbTempGains(null)}
-                            className="max-w-full object-contain"
+                            className="object-contain"
                             style={{
                                 cursor: wbPickMode ? 'crosshair' : undefined,
-                                // Fit the whole photo by default: the wrapper's
-                                // height is content-driven so max-h-full never
-                                // bit — portrait photos overflowed and scrolled.
-                                maxHeight: 'calc(100vh - 170px)',
+                                // The parent is a min-h-0 flex box, so percentages
+                                // resolve against a real height: the whole photo
+                                // fits, portrait included, and is never cut.
+                                display: 'block',
+                                maxWidth: '100%',
+                                maxHeight: '100%',
                                 filter: `${wbTempGains ? 'url(#wb-temp-filter) ' : ''}${showBefore ? '' : generateFilter()}`.trim() || 'none',
                                 transform: `scale(${zoom})`,
                                 transformOrigin: 'center',
@@ -1225,6 +1232,20 @@ export const DevelopView: React.FC = () => {
                             </div>
                         </div>
                     </div>
+                )}
+                {/* Develop pipeline: WB cast → tone curve → saturation */}
+                {!showBefore && (
+                    <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden>
+                        <filter id="dev-filter" colorInterpolationFilters="sRGB">
+                            <feColorMatrix type="matrix" values={wbMatrix} result="wb" />
+                            <feComponentTransfer in="wb" result="tone">
+                                <feFuncR type="table" tableValues={toneTable} />
+                                <feFuncG type="table" tableValues={toneTable} />
+                                <feFuncB type="table" tableValues={toneTable} />
+                            </feComponentTransfer>
+                            <feColorMatrix in="tone" type="saturate" values={satValue} />
+                        </filter>
+                    </svg>
                 )}
                 {wbTempGains && (
                     <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden>

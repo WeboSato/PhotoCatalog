@@ -31,6 +31,7 @@ import metadataService from '../services/MetadataService';
 import folderService from '../services/FolderService';
 import lightroomImportService from '../services/LightroomImportService';
 import { XmpService } from './services/XmpService';
+import { xmpAutoWrite } from './services/XmpAutoWriteService';
 import settingsService from './services/SettingsService';
 import catalogManagerService from './services/CatalogManagerService';
 import { updateService } from './services/UpdateService';
@@ -851,6 +852,14 @@ app.whenReady().then(async () => {
             }
         }
 
+        // XMP catch-up: photos cataloged before auto-write existed get their
+        // sidecar now (only where missing or older than the catalog row).
+        xmpAutoWrite.backfill((done, total, written) => {
+            console.log(`[XMP] rattrapage ${done}/${total} — ${written} sidecars écrits`);
+        }).then(r => {
+            if (r.written > 0) console.log(`[XMP] rattrapage terminé : ${r.written} sidecars écrits, ${r.skipped} déjà à jour`);
+        }).catch(() => { /* best effort */ });
+
         // Auto AI tagging for photos without keywords — OFF by default. On a large
         // library on an external HDD this scanned all photos and ran ONNX on every
         // launch, saturating the disk so the visible grid's thumbnails couldn't load.
@@ -911,6 +920,8 @@ app.whenReady().then(async () => {
     // Linked edit copies: re-arm the save-watchers and poll. Each Cmd+S in the
     // editor refreshes that copy's thumbnails and the grid, hands-free.
     {
+        const fixedMeta = externalEditorService.backfillCopyMetadata();
+        if (fixedMeta > 0) console.log(`[LinkedEdit] métadonnées héritées pour ${fixedMeta} copie(s)`);
         const armed = externalEditorService.loadLinkedEditsFromCatalog();
         if (armed > 0) console.log(`[LinkedEdit] watching ${armed} linked cop${armed > 1 ? 'ies' : 'y'}`);
         setInterval(async () => {
@@ -1074,16 +1085,19 @@ ipcMain.handle('photos:delete', (_, ids: string[], deleteFromDisk: boolean = fal
 
 ipcMain.handle('photos:bulkUpdateRating', (_, ids: string[], rating: number) => {
     catalogDb.bulkUpdateRating(ids, rating);
+    xmpAutoWrite.queue(ids);
     return true;
 });
 
 ipcMain.handle('photos:bulkUpdateFlag', (_, ids: string[], flag: 'none' | 'picked' | 'rejected') => {
     catalogDb.bulkUpdateFlag(ids, flag);
+    xmpAutoWrite.queue(ids);
     return true;
 });
 
 ipcMain.handle('photos:bulkUpdateColorLabel', (_, ids: string[], colorLabel: string) => {
     catalogDb.bulkUpdateColorLabel(ids, colorLabel as any);
+    xmpAutoWrite.queue(ids);
     return true;
 });
 
@@ -1291,17 +1305,20 @@ ipcMain.handle('keywords:getForPhoto', (_, photoId: string) => {
 
 ipcMain.handle('keywords:addToPhoto', (_, photoId: string, keywordIds: string[]) => {
     catalogDb.addKeywordsToPhoto(photoId, keywordIds);
+    xmpAutoWrite.queue(photoId);
     return true;
 });
 
 ipcMain.handle('keywords:removeFromPhoto', (_, photoId: string, keywordIds: string[]) => {
     catalogDb.removeKeywordsFromPhoto(photoId, keywordIds);
+    xmpAutoWrite.queue(photoId);
     return true;
 });
 
 // AI Keywords - add keywords by name (creates if not exists)
 ipcMain.handle('keywords:addByName', (_, photoId: string, keywordNames: string[]) => {
     catalogDb.addKeywordsByNameToPhoto(photoId, keywordNames);
+    xmpAutoWrite.queue(photoId);
     return true;
 });
 
@@ -1318,6 +1335,7 @@ ipcMain.handle('ai:analyze', async (_, photoId: string) => {
     // Save keywords to database
     if (keywords.length > 0) {
         catalogDb.addKeywordsByNameToPhoto(photoId, keywords);
+        xmpAutoWrite.queue(photoId);
     }
 
     return keywords;
@@ -1474,6 +1492,7 @@ ipcMain.handle('import:fromPath', async (event, options: ImportOptions) => {
     });
     // The grid/folders should show new photos without a manual refresh.
     mainWindow?.webContents.send('photos:refresh');
+    xmpAutoWrite.queue(result.importedIds || []);
     return result;
 });
 
@@ -1482,6 +1501,7 @@ ipcMain.handle('import:files', async (event, filePaths: string[], options: any) 
         mainWindow?.webContents.send('import:progress', progress);
     });
     mainWindow?.webContents.send('photos:refresh');
+    xmpAutoWrite.queue(result.importedIds || []);
     return result;
 });
 
@@ -1518,6 +1538,7 @@ ipcMain.handle('sync:run', async (_event, opts: {
             skipDuplicates: false, generateThumbnails: false, extractMetadata: true
         }, (progress: ImportProgress) => mainWindow?.webContents.send('import:progress', progress));
         importedIds = r.importedIds;
+        xmpAutoWrite.queue(importedIds);
         summary.imported = r.importedIds.length;
         summary.errors = r.errors.length;
     }
@@ -1802,6 +1823,7 @@ ipcMain.handle('photos:applyCrop', async (_event, photoId: string, crop: { x: nu
     try { ds = photo.develop_settings ? JSON.parse(photo.develop_settings as any) : {}; } catch { /* fresh */ }
     if (crop) ds.crop = crop; else delete ds.crop;
     catalogDb.updatePhoto(photoId, { develop_settings: JSON.stringify(ds) } as any);
+    xmpAutoWrite.queue(photoId);
 
     const t = await thumbnailService.generateThumbnails(photo.file_path, { forceRegenerate: true, crop: crop || null });
     if (t) {
@@ -1848,6 +1870,7 @@ ipcMain.handle('photos:applyWhiteBalance', async (_event, photoId: string, wb: {
     try { ds = photo.develop_settings ? JSON.parse(photo.develop_settings as any) : {}; } catch { /* fresh */ }
     if (wb) ds.wb = wb; else delete ds.wb;
     catalogDb.updatePhoto(photoId, { develop_settings: JSON.stringify(ds) } as any);
+    xmpAutoWrite.queue(photoId);
 
     const t = await thumbnailService.generateThumbnails(photo.file_path, { forceRegenerate: true });
     if (t) {
@@ -1879,6 +1902,7 @@ ipcMain.handle('photos:syncCalibration', async (_event, sourceId: string, target
         try { ds = p.develop_settings ? JSON.parse(p.develop_settings as any) : {}; } catch { /* fresh */ }
         if (wb) ds.wb = wb; else delete ds.wb;
         catalogDb.updatePhoto(id, { develop_settings: JSON.stringify(ds) } as any);
+        xmpAutoWrite.queue(id);
         try {
             const t = await thumbnailService.generateThumbnails(p.file_path, { forceRegenerate: true });
             if (t) {
