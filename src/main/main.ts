@@ -623,16 +623,19 @@ app.whenReady().then(async () => {
             // is identical whichever disk serves. Regenerated thumbnails (mtime
             // changes) refetch automatically; unchanged files revalidate for free.
             const etag = `"${stat.size}-${Math.round(stat.mtimeMs)}"`;
-            if (request.headers.get('if-none-match') === etag) {
-                imageServeStats.notModified++;
-                return new Response(null, { status: 304 });
-            }
+            const revalidated = request.headers.get('if-none-match') === etag;
+            if (revalidated) imageServeStats.notModified++;
+            else if (mirrored) imageServeStats.mirror++;
+            else imageServeStats.disk++;
 
-            if (mirrored) imageServeStats.mirror++; else imageServeStats.disk++;
+            // Log the first hit too, and count revalidations: milestones alone
+            // stayed silent on a cache-warm session, which reads as "no images
+            // requested at all" when diagnosing.
             const total = imageServeStats.mirror + imageServeStats.disk + imageServeStats.notModified;
-            if (total === 25 || total === 100 || total % 1000 === 0) {
+            if (total === 1 || total === 25 || total === 100 || total % 1000 === 0) {
                 console.log(`[local-image] ${total} served: ${imageServeStats.mirror} ssd-mirror, ${imageServeStats.disk} disk, ${imageServeStats.notModified} revalidated`);
             }
+            if (revalidated) return new Response(null, { status: 304 });
 
             const headers: Record<string, string> = {
                 'Content-Type': contentType,

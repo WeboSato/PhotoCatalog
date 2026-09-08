@@ -36,8 +36,15 @@ export function getThumbnailUrl(photo: { thumbnail_path?: string; file_path: str
 /**
  * Get preview URL for a photo
  */
-export function getPreviewUrl(photo: { preview_path?: string; thumbnail_path?: string; file_path: string; updated_at?: string }): string {
-    return getImageUrl(photo.preview_path || photo.thumbnail_path || photo.file_path, photo.updated_at);
+export function getPreviewUrl(photo: { preview_path?: string; thumbnail_path?: string; file_path: string; updated_at?: string; is_raw?: boolean }): string {
+    const best = photo.preview_path || photo.thumbnail_path;
+    if (best) return getImageUrl(best, photo.updated_at);
+    // Falling back to the source is only safe for formats the browser decodes:
+    // handing it a .NEF just renders a broken-image icon.
+    if (photo.is_raw || /\.(nef|cr2|cr3|arw|dng|raf|rw2|orf|psd|afphoto|af)$/i.test(photo.file_path)) {
+        return PLACEHOLDER_IMAGE;
+    }
+    return getImageUrl(photo.file_path, photo.updated_at);
 }
 
 /**

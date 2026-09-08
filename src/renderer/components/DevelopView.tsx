@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useCatalogStore, Photo } from '../stores/catalogStore';
-import { getImageUrl, getPreviewUrl } from '../utils/imageUrl';
+import { getImageUrl, getPreviewUrl, getThumbnailUrl } from '../utils/imageUrl';
 import {
     Sun, Contrast, Droplet, Thermometer, Palette,
     RotateCcw, ZoomIn, ZoomOut, ChevronLeft, ChevronDown, Eye, EyeOff,
@@ -342,7 +342,8 @@ export const DevelopView: React.FC = () => {
     // Bumped after a crop is applied so the <img> remounts and revalidates the
     // regenerated (same-URL) preview instead of showing the stale cached one.
     const [imgVersion, setImgVersion] = useState(0);
-    const imageSrc = activePhoto ? getPreviewUrl(activePhoto) || getImageUrl(activePhoto.file_path) : null;
+    // Preview → thumbnail, never the RAW: the browser cannot decode a .NEF.
+    const imageSrc = activePhoto ? (getPreviewUrl(activePhoto) || getThumbnailUrl(activePhoto)) : null;
 
     // ---- Recadrage non destructif (façon Lightroom) -----------------------
     // Le rect est normalisé (0..1) par rapport à l'image ORIGINALE complète et
@@ -870,6 +871,33 @@ export const DevelopView: React.FC = () => {
         };
     };
 
+    // Drag the panel edge to enlarge the photo. Width is remembered, so the
+    // layout the user set up survives restarts.
+    const [panelWidth, setPanelWidth] = useState(() => {
+        const saved = parseInt(localStorage.getItem('developPanelWidth') || '', 10);
+        return Number.isFinite(saved) ? Math.min(640, Math.max(240, saved)) : 320;
+    });
+    const [resizingPanel, setResizingPanel] = useState(false);
+    const startPanelResize = useCallback((e: React.PointerEvent) => {
+        e.preventDefault();
+        setResizingPanel(true);
+        const startX = e.clientX;
+        const startW = panelWidth;
+        const onMove = (ev: PointerEvent) => {
+            // Panel sits on the right: dragging left widens it.
+            const w = Math.min(640, Math.max(240, startW + (startX - ev.clientX)));
+            setPanelWidth(w);
+        };
+        const onUp = () => {
+            setResizingPanel(false);
+            window.removeEventListener('pointermove', onMove);
+            window.removeEventListener('pointerup', onUp);
+            setPanelWidth(w => { localStorage.setItem('developPanelWidth', String(w)); return w; });
+        };
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+    }, [panelWidth]);
+
     const currentIndex = photos.findIndex(p => p.id === activePhotoId);
 
     // Raccourcis clavier
@@ -949,7 +977,7 @@ export const DevelopView: React.FC = () => {
                             onClick={() => setActivePhotoId(photo.id)}
                             className={`w-12 h-12 rounded overflow-hidden transition-all ${photo.id === activePhotoId ? 'ring-2 ring-white/40 scale-105' : 'opacity-60 hover:opacity-100'}`}
                         >
-                            <img src={getImageUrl(photo.file_path)} alt="" className="w-full h-full object-cover" />
+                            <img src={getThumbnailUrl(photo)} alt="" className="w-full h-full object-contain" />
                         </button>
                     ))}
                 </div>
@@ -1276,7 +1304,15 @@ export const DevelopView: React.FC = () => {
             </div>
 
             {/* Panneau droit - reglages */}
-            <div className="w-80 bg-gray-800 border-l border-gray-700 overflow-y-auto">
+            <div
+                onPointerDown={startPanelResize}
+                title="Glisser pour agrandir la photo"
+                className={`w-1.5 cursor-col-resize flex-shrink-0 transition-colors ${resizingPanel ? 'bg-white/40' : 'bg-transparent hover:bg-white/20'}`}
+            />
+            <div
+                className="bg-gray-800 border-l border-gray-700 overflow-y-auto flex-shrink-0"
+                style={{ width: panelWidth }}
+            >
                 <div className="p-4 border-b border-gray-700 flex items-center justify-between">
                     <h2 className="text-sm font-semibold text-white">Develop</h2>
                     <button onClick={handleReset} className="text-xs text-gray-400 hover:text-white flex items-center gap-1 transition-colors">

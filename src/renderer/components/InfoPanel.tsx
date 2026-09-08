@@ -395,6 +395,30 @@ export const InfoPanel: React.FC = React.memo(() => {
     const updateDevelopmentSetting = useCatalogStore((s) => s.updateDevelopmentSetting);
     const resetDevelopmentSettings = useCatalogStore((s) => s.resetDevelopmentSettings);
 
+    // Resizable width, remembered across sessions.
+    const [panelWidth, setPanelWidth] = useState(() => {
+        const saved = parseInt(localStorage.getItem('infoPanelWidth') || '', 10);
+        return Number.isFinite(saved) ? Math.min(560, Math.max(220, saved)) : 288;
+    });
+    const [resizing, setResizing] = useState(false);
+    const startResize = useCallback((e: React.PointerEvent) => {
+        e.preventDefault();
+        setResizing(true);
+        const startX = e.clientX;
+        const startW = panelWidth;
+        const onMove = (ev: PointerEvent) => {
+            setPanelWidth(Math.min(560, Math.max(220, startW + (startX - ev.clientX))));
+        };
+        const onUp = () => {
+            setResizing(false);
+            window.removeEventListener('pointermove', onMove);
+            window.removeEventListener('pointerup', onUp);
+            setPanelWidth(w => { localStorage.setItem('infoPanelWidth', String(w)); return w; });
+        };
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+    }, [panelWidth]);
+
     // All state hooks
     const [activePhoto, setActivePhoto] = useState<any>(null);
     const [keywords, setKeywords] = useState<any[]>([]);
@@ -498,7 +522,13 @@ export const InfoPanel: React.FC = React.memo(() => {
     const imageSrc = activePhoto ? getPreviewUrl(activePhoto) : '';
 
     return (
-        <div className="w-72 bg-gray-900/55 backdrop-blur-2xl border-l border-white/10 flex flex-col overflow-hidden">
+        <div className="flex flex-shrink-0" style={{ width: panelWidth + 6 }}>
+        <div
+            onPointerDown={startResize}
+            title="Glisser pour agrandir la photo"
+            className={`w-1.5 cursor-col-resize flex-shrink-0 transition-colors ${resizing ? 'bg-white/40' : 'bg-transparent hover:bg-white/20'}`}
+        />
+        <div className="flex-1 min-w-0 bg-gray-900/55 backdrop-blur-2xl border-l border-white/10 flex flex-col overflow-hidden">
             {/* Preview - hide in loupe mode since image is already shown */}
             {!isLoupeMode && (
                 <div className="h-48 bg-black flex items-center justify-center">
@@ -727,6 +757,7 @@ export const InfoPanel: React.FC = React.memo(() => {
                     Show in Finder
                 </button>
             </div>
+        </div>
         </div>
     );
 });
