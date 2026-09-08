@@ -22,7 +22,7 @@ const defaultSettings: AppSettings = {
     language: 'fr',
     showArchived: false,
     autoTagOnStartup: false, // off by default: heavy on external HDDs (like Lightroom)
-    autoWriteXmp: true // Lightroom's "automatically write changes into XMP"
+    autoWriteXmp: false // opt-in: sidecars are shared with Lightroom, never write uninvited
 };
 
 // Use any type to avoid TS issues with electron-store

@@ -63,10 +63,30 @@ class XmpAutoWriteService {
         return md;
     }
 
+    // A sidecar written by someone else (Lightroom, Bridge, Capture One) holds
+    // fields this app does not model — crops, tone curves, masks. writeXmp
+    // regenerates the file from scratch, so writing over one DESTROYS that work.
+    // Anything without our marker is off limits.
+    private isForeign(imagePath: string): boolean {
+        try {
+            const xmpPath = XmpService.getXmpPath(imagePath);
+            if (!fs.existsSync(xmpPath)) return false;
+            return !fs.readFileSync(xmpPath, 'utf-8').includes('PhotoCatalog XMP');
+        } catch {
+            return true; // unreadable: treat as foreign and leave it alone
+        }
+    }
+
+    skippedForeign = 0;
+
     writeOne(photoId: string): boolean {
         try {
             const photo = catalogDb.getPhoto(photoId);
             if (!photo?.file_path || !fs.existsSync(photo.file_path)) return false;
+            if (this.isForeign(photo.file_path)) {
+                this.skippedForeign++;
+                return false;
+            }
             return XmpService.writeXmp(photo.file_path, this.buildMetadata(photo));
         } catch {
             return false;
@@ -100,7 +120,8 @@ class XmpAutoWriteService {
             for (let i = 0; i < photos.length; i++) {
                 const p = photos[i];
                 if (p.file_path && fs.existsSync(p.file_path) && this.isStale(p)) {
-                    if (XmpService.writeXmp(p.file_path, this.buildMetadata(p))) written++;
+                    if (this.isForeign(p.file_path)) { this.skippedForeign++; skipped++; }
+                    else if (XmpService.writeXmp(p.file_path, this.buildMetadata(p))) written++;
                 } else {
                     skipped++;
                 }

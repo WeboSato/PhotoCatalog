@@ -855,13 +855,8 @@ app.whenReady().then(async () => {
             }
         }
 
-        // XMP catch-up: photos cataloged before auto-write existed get their
-        // sidecar now (only where missing or older than the catalog row).
-        xmpAutoWrite.backfill((done, total, written) => {
-            console.log(`[XMP] rattrapage ${done}/${total} — ${written} sidecars écrits`);
-        }).then(r => {
-            if (r.written > 0) console.log(`[XMP] rattrapage terminé : ${r.written} sidecars écrits, ${r.skipped} déjà à jour`);
-        }).catch(() => { /* best effort */ });
+        // No automatic library-wide sidecar sweep: writing sidecars touches files
+        // Lightroom also owns, so the catch-up is user-initiated (xmp:backfill).
 
         // Auto AI tagging for photos without keywords — OFF by default. On a large
         // library on an external HDD this scanned all photos and ran ONNX on every
