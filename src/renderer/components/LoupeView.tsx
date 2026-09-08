@@ -303,7 +303,10 @@ export const LoupeView: React.FC = () => {
     });
 
     return (
-        <div className="flex-1 flex flex-col bg-black">
+        // min-h-0 + overflow-hidden on the root: without them this flex child
+        // keeps min-height:auto and grows to the photo's natural height (2048px
+        // in a 1600px window) — the image then drew full-size and was clipped.
+        <div className="flex-1 min-h-0 flex flex-col bg-black overflow-hidden">
             {/* Top Toolbar */}
             <div className="flex items-center justify-between px-4 py-2 bg-[#111] border-b border-[#333]">
                 {/* Left - Back and Photo info */}

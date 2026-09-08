@@ -938,6 +938,22 @@ export const DevelopView: React.FC = () => {
         window.addEventListener('pointerup', onUp);
     }, [panelWidth]);
 
+    const stageRef = useRef<HTMLDivElement>(null);
+    const [stage, setStage] = useState({ w: 0, h: 0 });
+    useEffect(() => {
+        const el = stageRef.current;
+        if (!el) return;
+        const measure = () => {
+            const r = el.getBoundingClientRect();
+            // p-4 on the stage: keep the photo inside the padding.
+            setStage({ w: Math.max(0, r.width - 32), h: Math.max(0, r.height - 32) });
+        };
+        measure();
+        const ro = new ResizeObserver(measure);
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, []);
+
     const currentIndex = photos.findIndex(p => p.id === activePhotoId);
 
     // Raccourcis clavier
@@ -1102,7 +1118,7 @@ export const DevelopView: React.FC = () => {
                     </div>
                 </div>
 
-                <div className="flex-1 min-h-0 min-w-0 flex items-center justify-center overflow-hidden p-4">
+                <div ref={stageRef} className="flex-1 min-h-0 min-w-0 flex items-center justify-center overflow-hidden p-4">
                     {removeMode ? (
                         <div className="flex flex-col items-center gap-3 max-w-full max-h-full">
                             <div className="flex items-center gap-3 text-xs">
@@ -1234,7 +1250,7 @@ export const DevelopView: React.FC = () => {
                             </div>
                         </div>
                     ) : (
-                    <div className="relative" style={{ lineHeight: 0, maxWidth: '100%', maxHeight: '100%' }}>
+                    <div className="relative" style={{ lineHeight: 0 }}>
                         <img
                             key={imgVersion}
                             src={imageSrc || ''}
@@ -1246,12 +1262,13 @@ export const DevelopView: React.FC = () => {
                             className="object-contain"
                             style={{
                                 cursor: wbPickMode ? 'crosshair' : undefined,
-                                // The parent is a min-h-0 flex box, so percentages
-                                // resolve against a real height: the whole photo
-                                // fits, portrait included, and is never cut.
+                                // Bound by the MEASURED stage, in pixels. A percentage
+                                // max-height resolved against the shrink-wrapping
+                                // wrapper's auto height and computed to none, so the
+                                // photo drew at natural size and was clipped.
                                 display: 'block',
-                                maxWidth: '100%',
-                                maxHeight: '100%',
+                                maxWidth: stage.w > 0 ? stage.w : '100%',
+                                maxHeight: stage.h > 0 ? stage.h : '100%',
                                 filter: `${wbTempGains ? 'url(#wb-temp-filter) ' : ''}${showBefore ? '' : generateFilter()}`.trim() || 'none',
                                 transform: `scale(${zoom})`,
                                 transformOrigin: 'center',
