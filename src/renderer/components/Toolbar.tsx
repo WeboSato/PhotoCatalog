@@ -472,7 +472,12 @@ const Toolbar: React.FC = () => {
         const photo = photos.find(p => p.id === activePhotoId);
         if (photo) {
             // Linked-copy flow: TIFF copy beside the original, Cmd+S round-trips.
-            await window.api.editLinkedCopy(photo.id);
+            try {
+                const r = await window.api.editLinkedCopy(photo.id);
+                if (!r?.success) alert(`Ouverture dans Affinity impossible : ${r?.error || 'erreur inconnue'}`);
+            } catch (e: any) {
+                alert(`Ouverture dans Affinity impossible : ${e?.message || e}`);
+            }
         }
     };
 

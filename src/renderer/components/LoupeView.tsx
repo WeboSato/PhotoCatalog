@@ -239,10 +239,19 @@ export const LoupeView: React.FC = () => {
         setContextMenu({ x: e.clientX, y: e.clientY });
     };
 
+    const [editError, setEditError] = useState('');
     const handleOpenInAffinity = async () => {
         if (activePhoto) {
             // Linked-copy flow: TIFF copy beside the original, Cmd+S round-trips.
-            await window.api.editLinkedCopy(activePhoto.id);
+            // Report failures: discarding the result made a missing editor or an
+            // unreadable RAW look like the click did nothing.
+            try {
+                const r = await window.api.editLinkedCopy(activePhoto.id);
+                if (!r?.success) setEditError(r?.error || 'Ouverture impossible');
+            } catch (e: any) {
+                setEditError(String(e?.message || e));
+            }
+            setTimeout(() => setEditError(''), 8000);
         }
         setContextMenu(null);
     };
@@ -387,6 +396,12 @@ export const LoupeView: React.FC = () => {
                     </button>
                 </div>
             </div>
+
+            {editError && (
+                <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50 glass-strong text-white text-sm px-5 py-2.5 rounded-lg shadow-2xl">
+                    ⚠️ {editError}
+                </div>
+            )}
 
             {/* Image container */}
             <div

@@ -476,12 +476,19 @@ export const FolderTree: React.FC = () => {
         // Persist active folder
         localStorage.setItem(STORAGE_KEYS.activeFolderId, folderPath);
 
-        try {
-            const photos = await window.api.getPhotosInFolder(folderPath);
-            setPhotos(photos);
-        } catch (error) {
-            console.error('Failed to load photos:', error);
+        // "Imports récents" is a time filter with no representation in the grid's
+        // filter bar: left on, a folder click returned only what was imported in
+        // the last 7 days — nearly nothing — with no visible reason why.
+        const { filters, setFilters } = useCatalogStore.getState();
+        if ((filters as any).imported_within_days) {
+            const next: any = { ...filters };
+            delete next.imported_within_days;
+            setFilters(next);
         }
+
+        // PhotoGrid owns loading (it applies the active filters). Firing a second,
+        // unfiltered query here raced it and could win, showing an unfiltered
+        // folder while the filter chips stayed lit.
     };
 
     // Context menu handlers
@@ -544,7 +551,9 @@ export const FolderTree: React.FC = () => {
         closeContextMenu();
     }, [contextMenu.folder, closeContextMenu]);
     const handleSyncDone = useCallback(async () => {
-        loadFolders();
+        // Defer the tree reload: it remounts the dialog, which discarded the
+        // "X photos importées" summary the user had not read yet.
+        setTimeout(() => loadFolders(), 400);
         if (activeFolderId) {
             try {
                 const photos = await window.api.getPhotosInFolder(activeFolderId);

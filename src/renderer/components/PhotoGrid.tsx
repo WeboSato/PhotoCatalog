@@ -573,6 +573,7 @@ export const PhotoGrid: React.FC = React.memo(() => {
     const [showRejectedMode, setShowRejectedMode] = useState(false);
     const [photosToDelete, setPhotosToDelete] = useState<Photo[]>([]);
     const loadingRef = useRef(false);
+    const pendingLoadRef = useRef(false);
     const parentRef = useRef<HTMLDivElement>(null);
     const removePhotos = useCatalogStore((s) => s.removePhotos);
     const setTotalPhotoCount = useCatalogStore((s) => s.setTotalPhotoCount);
@@ -606,7 +607,12 @@ export const PhotoGrid: React.FC = React.memo(() => {
     // filter bar works everywhere and clearing it restores the folder view.
     const loadPhotos = useCallback(async () => {
         const hasFilters = Object.keys(filters).length > 0;
-        if (loadingRef.current) return;
+        if (loadingRef.current) {
+            // Do not drop it: remember that another load is wanted and run it as
+            // soon as the current one finishes, or the filter chip lies.
+            pendingLoadRef.current = true;
+            return;
+        }
         loadingRef.current = true;
 
         try {
@@ -633,7 +639,15 @@ export const PhotoGrid: React.FC = React.memo(() => {
             console.error('Failed to load photos:', e);
         }
         loadingRef.current = false;
+        if (pendingLoadRef.current) {
+            pendingLoadRef.current = false;
+            void loadPhotosRef.current?.();
+        }
     }, [filters, activeCollectionId, activeFolderId, setPhotos]);
+
+    // Keep a stable handle so the tail-call above always runs the latest version.
+    const loadPhotosRef = useRef<null | (() => void)>(null);
+    loadPhotosRef.current = loadPhotos;
 
     // Initial load + whenever filters/folder/collection change
     useEffect(() => {
@@ -745,9 +759,14 @@ export const PhotoGrid: React.FC = React.memo(() => {
         });
 
         observer.observe(container);
+        // Measure immediately too: on a cold start the count is 0, the component
+        // early-returns, and by the time the real grid mounts a mount-only
+        // effect has already run against a null ref.
+        const w = container.getBoundingClientRect().width;
+        if (w > 0) setContainerWidth(w);
 
         return () => observer.disconnect();
-    }, []);
+    }, [totalPhotoCount]);
 
     // Handle photo click
     const handlePhotoClick = useCallback((e: React.MouseEvent, photo: Photo) => {

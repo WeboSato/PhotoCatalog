@@ -236,9 +236,21 @@ class ImportService {
         // Dedup UP FRONT (path AND name+size) so a duplicate is never copied
         // off the card just to be thrown away afterwards.
         const toImport: string[] = [];
+        const seenSig = new Set<string>();
         for (const f of imageFiles) {
-            if (options.skipDuplicates !== false && this.isAlreadyInCatalog(f)) result.skippedFiles.push(f);
-            else toImport.push(f);
+            if (options.skipDuplicates !== false && this.isAlreadyInCatalog(f)) {
+                result.skippedFiles.push(f);
+                continue;
+            }
+            // Also dedupe the batch against ITSELF: the catalog check cannot see
+            // two identical copies that are both still outside it, so a folder
+            // sync imported each of them and doubled the photo in the grid.
+            try {
+                const sig = `${path.basename(f).normalize('NFC')}|${fs.statSync(f).size}`;
+                if (seenSig.has(sig)) { result.skippedFiles.push(f); continue; }
+                seenSig.add(sig);
+            } catch { /* unreadable — let processFile report it */ }
+            toImport.push(f);
         }
 
         // ---- Fast copy phase (card → destination) --------------------------
@@ -250,22 +262,35 @@ class ImportService {
         // destination drive to the last gigabyte).
         const precopied = new Map<string, string>();
         if (options.destinationPath && toImport.length > 0) {
-            fs.mkdirSync(options.destinationPath, { recursive: true });
+            // Match the catalog's Unicode form: readdir returns NFD on macOS, so
+            // every existing row is decomposed. A composed destination made the
+            // imported photos invisible in their own folder.
+            const destDir = options.destinationPath.normalize('NFD');
+            options = { ...options, destinationPath: destDir };
+            fs.mkdirSync(destDir, { recursive: true });
 
             const sizes = new Map<string, number>();
             let totalBytes = 0;
             for (const f of toImport) {
-                try { const sz = fs.statSync(f).size; sizes.set(f, sz); totalBytes += sz; }
-                catch { sizes.set(f, 0); }
+                try {
+                    const sz = fs.statSync(f).size;
+                    sizes.set(f, sz);
+                    // Only count what still has to be WRITTEN: a resumed import
+                    // already has some files at the destination, and counting
+                    // them made the space check refuse a copy needing no room.
+                    const already = path.join(destDir, path.basename(f));
+                    const done = fs.existsSync(already) && fs.statSync(already).size === sz;
+                    if (!done) totalBytes += sz;
+                } catch { sizes.set(f, 0); }
             }
 
             const MARGIN = 1024 ** 3; // keep at least 1 GB free on the destination
-            const free = await this.freeBytes(options.destinationPath);
+            const free = await this.freeBytes(destDir);
             if (free < totalBytes + MARGIN) {
                 const missing = (totalBytes + MARGIN - free) / 1024 ** 3;
                 const msg = `Espace insuffisant sur le disque de destination : il manque ${missing.toFixed(1)} Go pour copier ${(totalBytes / 1024 ** 3).toFixed(1)} Go. Libère de l'espace ou décoche des photos.`;
                 result.success = false;
-                result.errors.push({ file: options.destinationPath, error: msg });
+                result.errors.push({ file: destDir, error: msg });
                 onProgress?.({ phase: 'error', current: 0, total: toImport.length, errors: [msg] });
                 result.duration = Date.now() - startTime;
                 return result;
@@ -278,10 +303,10 @@ class ImportService {
                 const size = sizes.get(f) || 0;
                 const ext = path.extname(f);
                 const base = path.basename(f, ext);
-                let dest = path.join(options.destinationPath, path.basename(f));
+                let dest = path.join(destDir, path.basename(f));
                 let n = 1;
                 while (planned.has(dest) || (fs.existsSync(dest) && fs.statSync(dest).size !== size)) {
-                    dest = path.join(options.destinationPath, `${base}_${n++}${ext}`);
+                    dest = path.join(destDir, `${base}_${n++}${ext}`);
                 }
                 planned.add(dest);
                 precopied.set(f, dest);
@@ -322,7 +347,7 @@ class ImportService {
                     }
                     done++;
                     emit(path.basename(src));
-                    if (!aborted && done % 10 === 0 && await this.freeBytes(options.destinationPath!) < MARGIN) {
+                    if (!aborted && done % 10 === 0 && await this.freeBytes(destDir) < MARGIN) {
                         aborted = true;
                         for (const rest of queue.splice(0)) {
                             result.errors.push({ file: rest, error: 'Espace disque insuffisant — import interrompu' });
@@ -566,9 +591,8 @@ class ImportService {
 
         if (allKeywords.size > 0) {
             const keywordIds: string[] = [];
+            const existingKeywords = catalogDb.getKeywords(); // once, not per keyword
             for (const keywordName of allKeywords) {
-                // Find or create keyword
-                const existingKeywords = catalogDb.getKeywords();
                 let keyword = existingKeywords.find(k => k.name.toLowerCase() === keywordName.toLowerCase());
                 if (!keyword) {
                     const keywordId = catalogDb.createKeyword({ name: keywordName });

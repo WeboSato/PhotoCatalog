@@ -1,4 +1,7 @@
-import { spawn, ChildProcess, execSync } from 'child_process';
+import { spawn, ChildProcess, execFile } from 'child_process';
+import { promisify } from 'util';
+
+const execFileAsync = promisify(execFile);
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
@@ -268,7 +271,10 @@ class ExternalEditorService {
                     `;
 
                     try {
-                        execSync(`osascript -e '${appleScript.replace(/'/g, "'\"'\"'")}'`);
+                        // execFile: no shell, so the script (and any apostrophe in
+                        // the filename) is passed as one argv entry, and the main
+                        // process is not blocked while Affinity launches.
+                        await execFileAsync('osascript', ['-e', appleScript], { timeout: 15000 });
                         console.log(`[ExternalEditorService] Opened ${pathToOpen} in ${editor.name} via AppleScript`);
                     } catch (appleScriptError) {
                         console.warn('[ExternalEditorService] AppleScript failed, falling back to open command:', appleScriptError);
@@ -442,7 +448,10 @@ class ExternalEditorService {
                     try {
                         // No "saving no": if the user has unsaved work there,
                         // Affinity asks them instead of silently discarding it.
-                        execSync(`osascript -e 'tell application "${appName}" to close (every document whose name is "${docName}")' 2>/dev/null`, { timeout: 4000 });
+                        await execFileAsync('osascript', [
+                            '-e',
+                            `tell application "${appName}" to close (every document whose name is "${docName}")`
+                        ], { timeout: 8000 });
                         staleRisk = false;
                     } catch { /* Affinity ignored the request — warn via staleRisk */ }
                 }
@@ -469,6 +478,12 @@ class ExternalEditorService {
             .get(photoId) as { id: string; file_path: string } | undefined;
         if (existing && fs.existsSync(existing.file_path)) {
             return { copyPath: existing.file_path, copyPhotoId: existing.id };
+        }
+        if (existing) {
+            // The copy was deleted in the Finder. Its row still owns that
+            // file_path, so re-creating the TIFF at the same name collided on the
+            // UNIQUE index and the new copy inherited the dead row's thumbnail.
+            catalogDb.deletePhotos([existing.id]);
         }
 
         // Build a collision-safe "<name>-Edit.tif" next to the original.
@@ -529,8 +544,16 @@ class ExternalEditorService {
             let fixed = 0;
             for (const r of rows) {
                 const src = catalogDb.getPhoto(r.edited_from_id);
-                if (!src) continue;
-                const fields = this.inheritedShotFields(src);
+                const copy = catalogDb.getPhoto(r.id);
+                if (!src || !copy) continue;
+                // Fill only what is EMPTY on the copy: this runs on every launch,
+                // so overwriting would revert a title or copyright the user set
+                // on the copy, again and again.
+                const fields: Record<string, any> = {};
+                for (const [k, v] of Object.entries(this.inheritedShotFields(src))) {
+                    const cur = (copy as any)[k];
+                    if (cur === null || cur === undefined || cur === '') fields[k] = v;
+                }
                 if (Object.keys(fields).length) { catalogDb.updatePhoto(r.id, fields as any); fixed++; }
             }
             return fixed;

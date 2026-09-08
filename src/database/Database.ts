@@ -456,8 +456,9 @@ class CatalogDatabase {
         }
 
         if (criteria.folder_path) {
+            // Without the separator, ".../moi" also matched ".../moi_divers".
             conditions.push('file_path LIKE ?');
-            params.push(`${criteria.folder_path}%`);
+            params.push(`${String(criteria.folder_path).replace(/\/+$/, '')}/%`);
         }
 
         if (criteria.search_text) {

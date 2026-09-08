@@ -4,7 +4,25 @@ import os from 'os';
 import path from 'path';
 import crypto from 'crypto';
 import { app } from 'electron';
-import { execSync } from 'child_process';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+
+const execFileAsync = promisify(execFile);
+
+// Every external converter used to run through execSync, which blocks the
+// Electron MAIN process: the window stopped repainting and the local-image
+// protocol handler could not answer, so the grid went blank for the whole
+// render. execFile is async and takes an argv array, so it also never hands a
+// filename to a shell — a photo called "L'été.NEF" no longer breaks the
+// command, and a crafted name cannot inject one.
+const runTool = async (cmd: string, args: string[], timeout: number): Promise<boolean> => {
+    try {
+        await execFileAsync(cmd, args, { timeout, maxBuffer: 16 * 1024 * 1024 });
+        return true;
+    } catch {
+        return false;
+    }
+};
 import { RAW_EXTENSIONS } from '../database/schema';
 import { encode } from 'blurhash';
 
@@ -188,31 +206,71 @@ class ThumbnailService {
      * can never do — so this is what makes the Lightroom-style flow possible.
      * Quality ladder: darktable-cli (real demosaic) → sips → embedded JPEG.
      */
+    /** Bake the stored crop + white balance into an already-rendered file. */
+    private async applyStoredEdits(filePath: string, sourcePath: string): Promise<void> {
+        const crop = this.lookupStoredCrop(sourcePath);
+        const wb = this.lookupStoredWb(sourcePath);
+        if (!crop && !wb) return;
+        try {
+            let img = sharp(filePath).rotate();
+            if (crop) {
+                const meta = await sharp(filePath).rotate().metadata();
+                const W = meta.width || 0, H = meta.height || 0;
+                if (W > 1 && H > 1) {
+                    const left = Math.max(0, Math.min(W - 2, Math.round(crop.x * W)));
+                    const top = Math.max(0, Math.min(H - 2, Math.round(crop.y * H)));
+                    img = img.extract({
+                        left, top,
+                        width: Math.max(1, Math.min(W - left, Math.round(crop.w * W))),
+                        height: Math.max(1, Math.min(H - top, Math.round(crop.h * H))),
+                    });
+                }
+            }
+            if (wb && (Math.abs(wb.r - 1) > 0.005 || Math.abs(wb.b - 1) > 0.005)) {
+                img = img.removeAlpha().linear([wb.r, 1, wb.b], [0, 0, 0]);
+            }
+            const tmp = `${filePath}.edits.tif`;
+            await img.withMetadata().tiff({ compression: 'lzw' }).toFile(tmp);
+            fs.renameSync(tmp, filePath);
+        } catch (e) {
+            safeError('[ThumbnailService] Could not bake stored edits into the editable TIFF', e);
+        }
+    }
+
     async renderEditableTiff(sourcePath: string, outPath: string): Promise<boolean> {
         const ext = path.extname(sourcePath).toLowerCase();
         try {
             if (!RAW_EXTENSIONS.includes(ext)) {
                 // Standard formats: one sharp pass, full resolution.
                 await sharp(sourcePath).rotate().withMetadata().tiff({ compression: 'lzw' }).toFile(outPath);
-                return fs.existsSync(outPath) && fs.statSync(outPath).size > 0;
+                if (!(fs.existsSync(outPath) && fs.statSync(outPath).size > 0)) return false;
+                await this.applyStoredEdits(outPath, sourcePath);
+                return true;
             }
 
             // RAW: darktable gives a real full-res demosaic when installed.
             const darktablePath = '/Applications/darktable.app/Contents/MacOS/darktable-cli';
             if (fs.existsSync(darktablePath)) {
                 try {
-                    execSync(`"${darktablePath}" "${sourcePath}" "${outPath}" 2>/dev/null`, {
+                    await execFileAsync(darktablePath, [sourcePath, outPath], {
                         timeout: 120000,
+                        maxBuffer: 16 * 1024 * 1024,
                         env: { ...process.env, HOME: process.env.HOME || '/tmp' }
                     });
-                    if (fs.existsSync(outPath) && fs.statSync(outPath).size > 0) return true;
+                    if (fs.existsSync(outPath) && fs.statSync(outPath).size > 0) {
+                        await this.applyStoredEdits(outPath, sourcePath);
+                        return true;
+                    }
                 } catch { /* fall through */ }
             }
 
             // sips (macOS built-in) decodes most RAW formats at full size.
             try {
-                execSync(`sips -s format tiff "${sourcePath}" --out "${outPath}" 2>/dev/null`, { timeout: 60000 });
-                if (fs.existsSync(outPath) && fs.statSync(outPath).size > 0) return true;
+                await runTool('sips', ['-s', 'format', 'tiff', sourcePath, '--out', outPath], 60000);
+                if (fs.existsSync(outPath) && fs.statSync(outPath).size > 0) {
+                    await this.applyStoredEdits(outPath, sourcePath);
+                    return true;
+                }
             } catch { /* fall through */ }
 
             // Last resort: the RAW's embedded JPEG (smaller, but always available).
@@ -220,7 +278,9 @@ class ThumbnailService {
             const jpegStart = this.findJpegMarker(buffer);
             if (jpegStart >= 0) {
                 await sharp(buffer.slice(jpegStart)).rotate().withMetadata().tiff({ compression: 'lzw' }).toFile(outPath);
-                return fs.existsSync(outPath) && fs.statSync(outPath).size > 0;
+                if (!(fs.existsSync(outPath) && fs.statSync(outPath).size > 0)) return false;
+                await this.applyStoredEdits(outPath, sourcePath);
+                return true;
             }
             return false;
         } catch {
@@ -256,7 +316,7 @@ class ThumbnailService {
                     }
                 } else {
                     tempJpeg = path.join(this.cacheDir, `temp_qp_${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`);
-                    execSync(`sips -s format jpeg "${sourcePath}" --out "${tempJpeg}" 2>/dev/null`, { timeout: 15000 });
+                    await runTool('sips', ['-s', 'format', 'jpeg', sourcePath, '--out', tempJpeg], 15000);
                     if (!fs.existsSync(tempJpeg) || fs.statSync(tempJpeg).size === 0) return false;
                     src = tempJpeg;
                 }
@@ -465,9 +525,7 @@ class ThumbnailService {
                 const tempJpeg = path.join(this.cacheDir, `temp_video_${Date.now()}.jpg`);
                 try {
                     // Try ffmpeg first
-                    execSync(`ffmpeg -i "${sourcePath}" -ss 00:00:01 -vframes 1 -y "${tempJpeg}" 2>/dev/null`, {
-                        timeout: 30000
-                    });
+                    await runTool('ffmpeg', ['-i', sourcePath, '-ss', '00:00:01', '-vframes', '1', '-y', tempJpeg], 30000);
                     if (fs.existsSync(tempJpeg) && fs.statSync(tempJpeg).size > 0) {
                         const jpegImage = sharp(tempJpeg);
                         const metadata = await jpegImage.metadata();
@@ -492,9 +550,7 @@ class ThumbnailService {
                 try {
                     // Use qlmanage (Quick Look) to generate preview
                     try {
-                        execSync(`qlmanage -t -s 2048 -o "${this.cacheDir}" "${sourcePath}" 2>/dev/null`, {
-                            timeout: 60000
-                        });
+                        await runTool('qlmanage', ['-t', '-s', '2048', '-o', this.cacheDir, sourcePath], 60000);
                         // qlmanage creates file with .png extension added to original name
                         const qlOutput = path.join(this.cacheDir, path.basename(sourcePath) + '.png');
                         if (fs.existsSync(qlOutput) && fs.statSync(qlOutput).size > 0) {
@@ -506,9 +562,7 @@ class ThumbnailService {
                     // Try sips as fallback
                     if (!converted) {
                         try {
-                            execSync(`sips -s format png "${sourcePath}" --out "${tempPng}" 2>/dev/null`, {
-                                timeout: 60000
-                            });
+                            await runTool('sips', ['-s', 'format', 'png', sourcePath, '--out', tempPng], 60000);
                             if (fs.existsSync(tempPng) && fs.statSync(tempPng).size > 0) {
                                 converted = true;
                             }
@@ -540,9 +594,7 @@ class ThumbnailService {
                 try {
                     // Try sips first (macOS built-in)
                     try {
-                        execSync(`sips -s format jpeg "${sourcePath}" --out "${tempJpeg}" 2>/dev/null`, {
-                            timeout: 60000
-                        });
+                        await runTool('sips', ['-s', 'format', 'jpeg', sourcePath, '--out', tempJpeg], 60000);
                         if (fs.existsSync(tempJpeg) && fs.statSync(tempJpeg).size > 0) {
                             converted = true;
                         }
@@ -551,9 +603,7 @@ class ThumbnailService {
                     // Try ImageMagick if sips failed
                     if (!converted) {
                         try {
-                            execSync(`convert "${sourcePath}[0]" "${tempJpeg}" 2>/dev/null`, {
-                                timeout: 60000
-                            });
+                            await runTool('convert', [`${sourcePath}[0]`, tempJpeg], 60000);
                             if (fs.existsSync(tempJpeg) && fs.statSync(tempJpeg).size > 0) {
                                 converted = true;
                             }
@@ -588,8 +638,9 @@ class ThumbnailService {
                     if (fs.existsSync(darktablePath)) {
                         try {
                             safeLog(`[ThumbnailService] Using darktable-cli for: ${sourcePath}`);
-                            execSync(`"${darktablePath}" "${sourcePath}" "${tempJpeg}" --width 2048 --height 2048 2>/dev/null`, {
+                            await execFileAsync(darktablePath, [sourcePath, tempJpeg, '--width', '2048', '--height', '2048'], {
                                 timeout: 60000,
+                                maxBuffer: 16 * 1024 * 1024,
                                 env: { ...process.env, HOME: process.env.HOME || '/tmp' }
                             });
                             if (fs.existsSync(tempJpeg) && fs.statSync(tempJpeg).size > 0) {
@@ -603,9 +654,7 @@ class ThumbnailService {
                     // Method 2: Use sips (macOS built-in)
                     if (!converted) {
                         try {
-                            execSync(`sips -s format jpeg "${sourcePath}" --out "${tempJpeg}" 2>/dev/null`, {
-                                timeout: 30000
-                            });
+                            await runTool('sips', ['-s', 'format', 'jpeg', sourcePath, '--out', tempJpeg], 30000);
                             if (fs.existsSync(tempJpeg) && fs.statSync(tempJpeg).size > 0) {
                                 converted = true;
                             }
@@ -764,16 +813,28 @@ class ThumbnailService {
     }
 
     private findJpegMarker(buffer: Buffer): number {
-        // Look for JPEG SOI marker (0xFFD8)
-        for (let i = 0; i < buffer.length - 1; i++) {
-            if (buffer[i] === 0xFF && buffer[i + 1] === 0xD8) {
-                // Verify it's followed by a valid JPEG marker
-                if (buffer[i + 2] === 0xFF) {
-                    return i;
-                }
+        // A RAW embeds SEVERAL JPEGs — typically a ~160px thumbnail, a ~570px
+        // screen preview, then the full-size one. Returning the FIRST handed
+        // back the smallest, so the crop editor framed a 0.2 MP image blown up
+        // to fill the pane. Collect the candidates and keep the largest span.
+        const starts: number[] = [];
+        for (let i = 0; i < buffer.length - 2; i++) {
+            if (buffer[i] === 0xFF && buffer[i + 1] === 0xD8 && buffer[i + 2] === 0xFF) {
+                starts.push(i);
+                if (starts.length > 24) break; // plenty; keep the scan bounded
             }
         }
-        return -1;
+        if (starts.length === 0) return -1;
+
+        let best = starts[0], bestLen = 0;
+        for (let k = 0; k < starts.length; k++) {
+            const from = starts[k];
+            // End at the next SOI (or EOF): a good proxy for encoded size.
+            const to = k + 1 < starts.length ? starts[k + 1] : buffer.length;
+            const len = to - from;
+            if (len > bestLen) { bestLen = len; best = from; }
+        }
+        return best;
     }
 
     async generateBulkThumbnails(
