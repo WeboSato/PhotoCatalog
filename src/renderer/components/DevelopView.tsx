@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { useCatalogStore, Photo } from '../stores/catalogStore';
+import { useCatalogStore, Photo, preservedDevKeys } from '../stores/catalogStore';
 import { getImageUrl, getPreviewUrl, getThumbnailUrl } from '../utils/imageUrl';
 import {
     Sun, Contrast, Droplet, Thermometer, Palette,
@@ -786,10 +786,13 @@ export const DevelopView: React.FC = () => {
         if (!activePhoto) return;
         setIsSaving(true);
         try {
-            await window.api.updatePhoto(activePhoto.id, {
-                develop_settings: JSON.stringify(settings)
-            });
-            updatePhoto(activePhoto.id, { develop_settings: JSON.stringify(settings) } as any);
+            // Presets and Reset rebuild `settings` from defaults, which has no
+            // crop/wb keys — carry them over so saving never deletes the crop
+            // or the grey-card calibration.
+            const kept = preservedDevKeys(activePhoto.develop_settings);
+            const json = JSON.stringify({ ...kept, ...settings });
+            await window.api.updatePhoto(activePhoto.id, { develop_settings: json });
+            updatePhoto(activePhoto.id, { develop_settings: json } as any);
             setSaveSuccess(true);
             setTimeout(() => setSaveSuccess(false), 2000);
         } catch (e) {
@@ -810,8 +813,10 @@ export const DevelopView: React.FC = () => {
         for (let i = 0; i < S; i++) {
             let y = i / (S - 1);
 
-            // Exposure in stops (±2 at full travel)
-            y *= Math.pow(2, settings.exposure / 50);
+            // Exposure in stops. The slider runs -5..+5 (EV), not -100..+100
+            // like the others, so dividing by 50 made a full-travel drag worth
+            // 0.1 stop — the control read as broken.
+            y *= Math.pow(2, settings.exposure / 2.5);
 
             // Black / white points
             const black = -settings.blacks / 500;
@@ -819,7 +824,9 @@ export const DevelopView: React.FC = () => {
             y = (y - black) / Math.max(0.05, white - black);
 
             // Contrast around mid-grey (dehaze adds a touch)
-            const c = 1 + (settings.contrast + settings.dehaze * 0.4) / 100;
+            // Clamp: contrast -100 with dehaze -100 produced a negative slope,
+            // rendering a photographic negative instead of a flat image.
+            const c = Math.max(0.05, 1 + (settings.contrast + settings.dehaze * 0.4) / 100);
             y = (y - 0.5) * c + 0.5;
 
             const cl = Math.min(1, Math.max(0, y));
@@ -852,9 +859,42 @@ export const DevelopView: React.FC = () => {
         [settings.saturation, settings.vibrance]
     );
 
+    // Sharpening as an unsharp mask, grain as monochrome noise, split toning as
+    // two luminance-masked colour layers. Each is a no-op at 0, so the filter
+    // chain is always the same shape.
+    const fx = useMemo(() => {
+        const amt = Math.max(0, settings.sharpening) / 100;          // 0..1.5
+        const radius = 0.4 + (settings.sharpeningRadius || 0) / 100 * 2;
+        const hue = (h: number, sat: number) => {
+            // HSL hue -> rgb at full saturation, mid lightness
+            const c = 1, x = 1 - Math.abs(((h / 60) % 2) - 1);
+            const seg = [[c,x,0],[x,c,0],[0,c,x],[0,x,c],[x,0,c],[c,0,x]][Math.floor((h % 360) / 60)] || [c,x,0];
+            const [r, g, b] = seg.map(v => Math.round(v * 255));
+            return { color: `rgb(${r},${g},${b})`, opacity: Math.max(0, Math.min(1, sat / 100)) };
+        };
+        return {
+            sharpenK2: (1 + amt).toFixed(3),
+            sharpenK3: (-amt).toFixed(3),
+            sharpenRadius: (amt > 0 ? radius : 0).toFixed(2),
+            grainOpacity: (Math.max(0, settings.grain) / 100 * 0.35).toFixed(3),
+            hi: hue(settings.splitHighlightHue || 45, settings.splitHighlightSat || 0),
+            lo: hue(settings.splitShadowHue || 220, settings.splitShadowSat || 0),
+            // Balance shifts where the highlight mask starts biting.
+            balance: (0.5 + (settings.splitBalance || 0) / 200).toFixed(3),
+        };
+    }, [settings.sharpening, settings.sharpeningRadius, settings.grain,
+        settings.splitHighlightHue, settings.splitHighlightSat,
+        settings.splitShadowHue, settings.splitShadowSat, settings.splitBalance]);
+
     const generateFilter = (): string => {
         const filters = ['url(#dev-filter)'];
-        if (settings.noiseReduction > 50) filters.push(`blur(${(settings.noiseReduction - 50) / 120}px)`);
+        if (settings.noiseReduction > 50) {
+            // "Détail" holds structure back from the smoothing, like a real
+            // noise-reduction detail slider — it was inert before.
+            const detail = Math.max(0, Math.min(100, settings.noiseReductionDetail || 0));
+            const strength = ((settings.noiseReduction - 50) / 120) * (1 - detail / 150);
+            if (strength > 0.01) filters.push(`blur(${strength.toFixed(3)}px)`);
+        }
         return filters.join(' ');
     };
 
@@ -1271,7 +1311,38 @@ export const DevelopView: React.FC = () => {
                                 <feFuncG type="table" tableValues={toneTable} />
                                 <feFuncB type="table" tableValues={toneTable} />
                             </feComponentTransfer>
-                            <feColorMatrix in="tone" type="saturate" values={satValue} />
+                            <feColorMatrix in="tone" type="saturate" values={satValue} result="sat" />
+
+                            {/* Split toning: tint highlights and shadows separately,
+                                each masked by luminance so the two never fight. */}
+                            <feColorMatrix in="sat" type="luminanceToAlpha" result="lum" />
+                            <feComponentTransfer in="lum" result="lumHi">
+                                <feFuncA type="table" tableValues={`0 ${fx.balance} 1`} />
+                            </feComponentTransfer>
+                            <feComponentTransfer in="lum" result="lumLo">
+                                <feFuncA type="table" tableValues="1 0" />
+                            </feComponentTransfer>
+                            <feFlood floodColor={fx.hi.color} floodOpacity={fx.hi.opacity} result="hiFlood" />
+                            <feComposite in="hiFlood" in2="lumHi" operator="in" result="hiLayer" />
+                            <feFlood floodColor={fx.lo.color} floodOpacity={fx.lo.opacity} result="loFlood" />
+                            <feComposite in="loFlood" in2="lumLo" operator="in" result="loLayer" />
+                            <feBlend in="sat" in2="hiLayer" mode="soft-light" result="splitHi" />
+                            <feBlend in="splitHi" in2="loLayer" mode="soft-light" result="split" />
+
+                            {/* Sharpening: classic unsharp mask (image + k*(image - blur)) */}
+                            <feGaussianBlur in="split" stdDeviation={fx.sharpenRadius} result="sBlur" />
+                            <feComposite in="split" in2="sBlur" operator="arithmetic"
+                                k1="0" k2={fx.sharpenK2} k3={fx.sharpenK3} k4="0" result="sharp" />
+
+                            {/* Grain: monochrome fractal noise blended over the frame */}
+                            <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3"
+                                seed="7" stitchTiles="stitch" result="noiseRaw" />
+                            <feColorMatrix in="noiseRaw" type="saturate" values="0" result="noiseMono" />
+                            <feComponentTransfer in="noiseMono" result="grainLayer">
+                                <feFuncA type="linear" slope={fx.grainOpacity} intercept="0" />
+                            </feComponentTransfer>
+                            <feBlend in="sharp" in2="grainLayer" mode="overlay" result="grained" />
+                            <feComposite in="grained" in2="SourceGraphic" operator="in" />
                         </filter>
                     </svg>
                 )}

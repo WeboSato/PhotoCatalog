@@ -60,7 +60,10 @@ export class XmpService {
      */
     static getXmpPath(imagePath: string): string {
         const ext = path.extname(imagePath);
-        return imagePath.replace(ext, '.xmp');
+        // Strip the trailing extension only: String.replace(ext, …) matches the
+        // first occurrence anywhere, so "…/photo.jpg copie.jpg" became
+        // "…/photo.xmp copie.jpg" — an XML file with a .jpg name in the library.
+        return ext ? imagePath.slice(0, imagePath.length - ext.length) + '.xmp' : imagePath + '.xmp';
     }
 
     /**
@@ -174,6 +177,12 @@ export class XmpService {
         }
 
         // Label (color)
+        const rightsMatch = content.match(/<dc:rights>[\s\S]*?<rdf:li[^>]*>([\s\S]*?)<\/rdf:li>/);
+        if (rightsMatch) metadata.copyright = rightsMatch[1].trim();
+
+        const flagMatch = content.match(/photocatalog:Flag="([^"]+)"/);
+        if (flagMatch) metadata.flag = flagMatch[1];
+
         const labelMatch = content.match(/xmp:Label="([^"]+)"/);
         if (labelMatch) {
             metadata.label = reverseColorLabelMap[labelMatch[1]] || labelMatch[1];
@@ -238,11 +247,21 @@ export class XmpService {
         const saturationMatch = content.match(/crs:Saturation="([^"]+)"/);
         if (saturationMatch) developSettings.saturation = parseFloat(saturationMatch[1]);
 
+        // Adobe stores Temperature in Kelvin (2000-50000) and Tint in -150..+150;
+        // this app's sliders are -100..+100. Anything outside our range is
+        // another tool's units — ignore it rather than feed a 5150 into a ±100
+        // control, which rendered a fully clipped frame.
         const tempMatch = content.match(/crs:Temperature="([^"]+)"/);
-        if (tempMatch) developSettings.temperature = parseFloat(tempMatch[1]);
+        if (tempMatch) {
+            const v = parseFloat(tempMatch[1]);
+            if (Number.isFinite(v) && Math.abs(v) <= 100) developSettings.temperature = v;
+        }
 
         const tintMatch = content.match(/crs:Tint="([^"]+)"/);
-        if (tintMatch) developSettings.tint = parseFloat(tintMatch[1]);
+        if (tintMatch) {
+            const v = parseFloat(tintMatch[1]);
+            if (Number.isFinite(v) && Math.abs(v) <= 100) developSettings.tint = v;
+        }
 
         if (Object.keys(developSettings).length > 0) {
             metadata.develop = developSettings;
@@ -278,6 +297,7 @@ export class XmpService {
     xmlns:photoshop="http://ns.adobe.com/photoshop/1.0/"
     xmlns:xmpMM="http://ns.adobe.com/xap/1.0/mm/"
     xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
+    xmlns:photocatalog="https://photocatalog.local/ns/1.0/"
     xmlns:exif="http://ns.adobe.com/exif/1.0/"
     xmlns:lr="http://ns.adobe.com/lightroom/1.0/"`;
 
@@ -286,6 +306,11 @@ export class XmpService {
             xmp += `\n    xmp:Rating="${metadata.rating}"`;
         }
 
+        if (metadata.flag && metadata.flag !== 'none') {
+            // Lightroom's pick flag. -1 rejected, 1 picked.
+            xmp += `\n    photoshop:Urgency="${metadata.flag === 'rejected' ? 8 : 1}"`;
+            xmp += `\n    photocatalog:Flag="${metadata.flag}"`;
+        }
         if (metadata.label && metadata.label !== 'none') {
             xmp += `\n    xmp:Label="${colorLabelMap[metadata.label] || metadata.label}"`;
         }

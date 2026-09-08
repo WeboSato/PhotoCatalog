@@ -272,6 +272,22 @@ const savedSession = loadSavedSession();
 // developmentSettings is ONE global slot shared by Loupe and the info panel.
 // Whoever changes the active photo must refresh it, or the sliders keep showing
 // the previous photo's values and write them onto the new one.
+// crop / wb are stored in develop_settings but are not slider values, so any
+// write that rebuilds the slider set from defaults (Reset, presets, save) has
+// to carry them over or it silently deletes the user's crop and calibration.
+export const preservedDevKeys = (raw: any): Record<string, any> => {
+    const out: Record<string, any> = {};
+    try {
+        const parsed = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : null;
+        if (parsed) {
+            for (const k of Object.keys(parsed)) {
+                if (!(k in defaultDevelopmentSettings)) out[k] = parsed[k];
+            }
+        }
+    } catch { /* unparsable — nothing to preserve */ }
+    return out;
+};
+
 const devSettingsFor = (state: any, id: string | null): DevelopmentSettings => {
     if (!id) return defaultDevelopmentSettings;
     const cached = state.photoDevSettings?.[id];
@@ -726,19 +742,7 @@ export const useCatalogStore = create<CatalogState>()(
             };
             addEditHistory(photoId, `${labelMap[key] || key} → ${value > 0 ? '+' : ''}${value}`, previousValue, value, previousSettings);
 
-            // Preserve keys the slider panel does not model (crop, wb): they live
-            // in the same column and a wholesale replace silently deleted them.
-            let preserved: Record<string, any> = {};
-            try {
-                const cur = state.photos.find(p => p.id === photoId)?.develop_settings;
-                const parsed = cur ? (typeof cur === 'string' ? JSON.parse(cur) : cur) : null;
-                if (parsed) {
-                    for (const k of Object.keys(parsed)) {
-                        if (!(k in defaultDevelopmentSettings)) preserved[k] = parsed[k];
-                    }
-                }
-            } catch { /* unparsable — nothing to preserve */ }
-
+            const preserved = preservedDevKeys(state.photos.find(p => p.id === photoId)?.develop_settings);
             const settingsJson = JSON.stringify({ ...preserved, ...newSettings });
             window.api.updatePhoto(photoId, { develop_settings: settingsJson });
 
@@ -768,7 +772,8 @@ export const useCatalogStore = create<CatalogState>()(
             const { addEditHistory } = get();
             addEditHistory(photoId, 'Reset', previousSettings, defaultDevelopmentSettings, previousSettings);
 
-            const settingsJson = JSON.stringify(defaultDevelopmentSettings);
+            const kept = preservedDevKeys(state.photos.find(p => p.id === photoId)?.develop_settings);
+            const settingsJson = JSON.stringify({ ...kept, ...defaultDevelopmentSettings });
             window.api.updatePhoto(photoId, { develop_settings: settingsJson });
 
             set((s) => {
