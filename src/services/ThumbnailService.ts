@@ -145,7 +145,17 @@ class ThumbnailService {
         const m = this.mirrorKeyFor(filePath);
         try {
             const stat = await fs.promises.stat(m);
-            return stat.size > 0 ? { path: m, size: stat.size, mtimeMs: stat.mtimeMs, mtime: stat.mtime } : null;
+            if (stat.size === 0) return null;
+            // Validate against the source. mirrorStore copies the source mtime,
+            // so a regenerated thumbnail (rotation, crop, external edit) no
+            // longer matches — without this check the mirror kept serving the
+            // pre-edit pixels for the life of the install.
+            const src = await fs.promises.stat(filePath);
+            if (Math.abs(src.mtimeMs - stat.mtimeMs) > 1000) {
+                fs.promises.unlink(m).catch(() => {});
+                return null;
+            }
+            return { path: m, size: stat.size, mtimeMs: stat.mtimeMs, mtime: stat.mtime };
         } catch {
             return null;
         }
@@ -645,12 +655,15 @@ class ThumbnailService {
                     throw new Error(`Cannot extract preview from RAW file: ${sourcePath}`);
                 }
             } else {
-                // Standard image formats
+                // Standard image formats. Bake the EXIF rotation in NOW:
+                // toBuffer() drops the orientation tag, so the .rotate() calls
+                // further down had nothing left to honour and a portrait JPEG
+                // came out sideways — and the crop was applied to the wrong axis.
                 const image = sharp(sourcePath);
-                const metadata = await image.metadata();
-                originalWidth = metadata.width || 0;
-                originalHeight = metadata.height || 0;
-                imageBuffer = await image.toBuffer();
+                const rotated = await image.rotate().toBuffer({ resolveWithObject: true });
+                imageBuffer = rotated.data;
+                originalWidth = rotated.info.width;
+                originalHeight = rotated.info.height;
             }
 
             // Verify buffer is valid before processing

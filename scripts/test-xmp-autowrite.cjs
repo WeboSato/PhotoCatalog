@@ -17,6 +17,9 @@ app.whenReady().then(async () => {
     const importService = require('/Volumes/Seagate 4T/PhotoCatalog/dist/main/services/ImportService.js').default;
     const { xmpAutoWrite } = require('/Volumes/Seagate 4T/PhotoCatalog/dist/main/main/services/XmpAutoWriteService.js');
     const { XmpService } = require('/Volumes/Seagate 4T/PhotoCatalog/dist/main/main/services/XmpService.js');
+    const { settingsService } = require('/Volumes/Seagate 4T/PhotoCatalog/dist/main/main/services/SettingsService.js');
+    // Sidecar writing is opt-in since it touches files Lightroom also owns.
+    settingsService.set('autoWriteXmp', true);
 
     fs.rmSync(BASE, { recursive: true, force: true });
     fs.mkdirSync(path.join(BASE, 'photos'), { recursive: true });
@@ -59,6 +62,17 @@ app.whenReady().then(async () => {
     const kws = catalogDb.getPhotoKeywords(row.id).map(k => k.name);
     check('nouveau catalogue: note relue depuis le XMP', row.rating === 4, `rating=${row.rating}`);
     check('nouveau catalogue: mots-clés relus depuis le XMP', kws.includes('mariage') && kws.includes('extérieur'), kws.join(', '));
+
+    // Safety contract: a sidecar written by Lightroom is never touched.
+    const foreign = path.join(BASE, 'photos', 'foreign.jpeg');
+    fs.copyFileSync(JPEG_SRC, foreign);
+    const impF = await importService.importFiles([foreign], { generateThumbnails: false, extractMetadata: false });
+    const LR = '<?xpacket begin=""?><x:xmpmeta x:xmptk="Adobe XMP Core 5.6"><rdf:RDF><rdf:Description crs:CropTop="0.2"/></rdf:RDF></x:xmpmeta>';
+    fs.writeFileSync(XmpService.getXmpPath(foreign), LR);
+    catalogDb.bulkUpdateRating([impF.importedIds[0]], 5);
+    xmpAutoWrite.queue([impF.importedIds[0]]);
+    await new Promise(r => setTimeout(r, 2200));
+    check('sidecar Lightroom jamais écrasé', fs.readFileSync(XmpService.getXmpPath(foreign), 'utf-8').includes('crs:CropTop'));
 
     console.log(`\n${pass}/${pass + fail} tests OK`);
     app.exit(fail === 0 ? 0 : 1);

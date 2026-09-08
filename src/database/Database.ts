@@ -318,7 +318,7 @@ class CatalogDatabase {
             'rating', 'flag', 'color_label', 'title', 'caption', 'copyright', 'creator',
             'thumbnail_path', 'preview_path', 'indexed', 'width', 'height', 'orientation',
             'is_raw', 'develop_settings', 'edit_copy_path', 'blur_hash',
-            'date_taken', 'edited_from_id',
+            'date_taken', 'edited_from_id', 'file_path', 'file_name',
             // Shooting metadata — needed so a linked edit copy can inherit it
             // from its source (Affinity's TIFF export drops the EXIF).
             'camera_make', 'camera_model', 'lens_model', 'focal_length',

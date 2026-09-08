@@ -269,6 +269,24 @@ const loadSavedSession = (): { viewMode: ViewMode; activePhotoId: string | null;
 };
 const savedSession = loadSavedSession();
 
+// developmentSettings is ONE global slot shared by Loupe and the info panel.
+// Whoever changes the active photo must refresh it, or the sliders keep showing
+// the previous photo's values and write them onto the new one.
+const devSettingsFor = (state: any, id: string | null): DevelopmentSettings => {
+    if (!id) return defaultDevelopmentSettings;
+    const cached = state.photoDevSettings?.[id];
+    if (cached) return cached;
+    const photo = state.photos?.find((p: any) => p.id === id);
+    if (photo?.develop_settings) {
+        try {
+            const parsed = typeof photo.develop_settings === 'string'
+                ? JSON.parse(photo.develop_settings) : photo.develop_settings;
+            return { ...defaultDevelopmentSettings, ...parsed };
+        } catch { /* unparsable — fall through to defaults */ }
+    }
+    return defaultDevelopmentSettings;
+};
+
 export const useCatalogStore = create<CatalogState>()(
   subscribeWithSelector((set, get) => ({
     // Initial state
@@ -349,7 +367,8 @@ export const useCatalogStore = create<CatalogState>()(
                 const rangeIds = photos.slice(start, end + 1).map((p) => p.id);
                 return {
                     selectedPhotoIds: new Set([...state.selectedPhotoIds, ...rangeIds]),
-                    activePhotoId: id
+                    activePhotoId: id,
+                    developmentSettings: devSettingsFor(state, id)
                 };
             }
         }
@@ -362,11 +381,11 @@ export const useCatalogStore = create<CatalogState>()(
                 newSet.add(id);
             }
             // Auto-open right panel when selecting a photo
-            return { selectedPhotoIds: newSet, activePhotoId: id, rightPanelCollapsed: false };
+            return { selectedPhotoIds: newSet, activePhotoId: id, rightPanelCollapsed: false, developmentSettings: devSettingsFor(state, id) };
         }
 
         // Auto-open right panel when selecting a photo
-        return { selectedPhotoIds: new Set([id]), activePhotoId: id, rightPanelCollapsed: false };
+        return { selectedPhotoIds: new Set([id]), activePhotoId: id, rightPanelCollapsed: false, developmentSettings: devSettingsFor(state, id) };
     }),
     selectAll: () => set((state) => ({
         selectedPhotoIds: new Set(state.photos.map((p) => p.id))
@@ -707,7 +726,20 @@ export const useCatalogStore = create<CatalogState>()(
             };
             addEditHistory(photoId, `${labelMap[key] || key} → ${value > 0 ? '+' : ''}${value}`, previousValue, value, previousSettings);
 
-            const settingsJson = JSON.stringify(newSettings);
+            // Preserve keys the slider panel does not model (crop, wb): they live
+            // in the same column and a wholesale replace silently deleted them.
+            let preserved: Record<string, any> = {};
+            try {
+                const cur = state.photos.find(p => p.id === photoId)?.develop_settings;
+                const parsed = cur ? (typeof cur === 'string' ? JSON.parse(cur) : cur) : null;
+                if (parsed) {
+                    for (const k of Object.keys(parsed)) {
+                        if (!(k in defaultDevelopmentSettings)) preserved[k] = parsed[k];
+                    }
+                }
+            } catch { /* unparsable — nothing to preserve */ }
+
+            const settingsJson = JSON.stringify({ ...preserved, ...newSettings });
             window.api.updatePhoto(photoId, { develop_settings: settingsJson });
 
             // findIndex + slice instead of map (avoid iterating all photos)

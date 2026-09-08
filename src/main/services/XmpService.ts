@@ -93,8 +93,35 @@ export class XmpService {
     /**
      * Write XMP sidecar file with metadata
      */
-    static writeXmp(imagePath: string, metadata: XmpMetadata): boolean {
+    /**
+     * A sidecar this app did not write belongs to another tool (Lightroom,
+     * Bridge, Capture One) and carries fields we do not model — crops, tone
+     * curves, masks, history. writeXmp regenerates the document from scratch,
+     * so writing over one destroys that work.
+     */
+    static readonly OWNER_MARK = 'PhotoCatalog XMP';
+    static foreignSkipped = 0;
+
+    static isForeignSidecar(imagePath: string): boolean {
+        try {
+            const xmpPath = this.getXmpPath(imagePath);
+            if (!fs.existsSync(xmpPath)) return false;
+            return !fs.readFileSync(xmpPath, 'utf-8').includes(this.OWNER_MARK);
+        } catch {
+            return true; // unreadable: assume it is someone else's and leave it
+        }
+    }
+
+    static writeXmp(imagePath: string, metadata: XmpMetadata, options: { allowForeign?: boolean } = {}): boolean {
         const xmpPath = this.getXmpPath(imagePath);
+
+        // Single choke point: updateXmp/addKeywords/removeKeywords and every IPC
+        // handler funnel through here, so guarding this one function protects
+        // every path. Guarding only the callers left eight ways around it.
+        if (!options.allowForeign && this.isForeignSidecar(imagePath)) {
+            this.foreignSkipped++;
+            return false;
+        }
 
         try {
             const content = this.generateXmp(imagePath, metadata);
